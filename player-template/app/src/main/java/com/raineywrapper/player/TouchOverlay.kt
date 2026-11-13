@@ -338,7 +338,17 @@ class TouchOverlay(
         stick.x = x
         stick.y = y
         onAnalog(stick.right, x, y)
+        if (!stick.right) stickToDpad(x, y)
         invalidate()
+    }
+
+        private fun stickToDpad(x: Float, y: Float) {
+        val keys = mutableSetOf<Int>()
+        if (x < -0.5f) keys += KeyEvent.KEYCODE_DPAD_LEFT
+        if (x > 0.5f) keys += KeyEvent.KEYCODE_DPAD_RIGHT
+        if (y < -0.5f) keys += KeyEvent.KEYCODE_DPAD_UP
+        if (y > 0.5f) keys += KeyEvent.KEYCODE_DPAD_DOWN
+        update(-100, keys)
     }
 
     private fun releaseStick(stick: Stick) {
@@ -346,6 +356,7 @@ class TouchOverlay(
         stick.x = 0f
         stick.y = 0f
         onAnalog(stick.right, 0f, 0f)
+        if (!stick.right) update(-100, emptySet())
         invalidate()
     }
 
