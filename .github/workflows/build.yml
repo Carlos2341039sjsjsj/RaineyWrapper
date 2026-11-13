@@ -1,0 +1,33 @@
+name: Build APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Android SDK
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.22.1"
+      - name: Fetch cores
+        run: cores/fetch_cores.sh mupen64plus_next_gles3 ppsspp
+      - name: Doctor
+        run: ./raineywrapper doctor
+      - name: Build
+        run: ./raineywrapper converter --public
+      - name: List APKs
+        run: find . -name "*.apk" -not -path "./.git/*"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: '**/*.apk'

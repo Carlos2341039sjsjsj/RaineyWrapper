@@ -233,7 +233,7 @@ class ConvertActivity : GamepadActivity() {
         linkRadio.isEnabled = source.canLink
         // External emulators read the file in place; PS2 images are too big to bundle anyway.
         embedRadio.isEnabled = !external
-        val link = source.canLink && (source.system.disc || external)
+        val link = source.canLink && external
         (if (link) linkRadio else embedRadio).isChecked = true
 
         installedEmulators = source.system.external.filter { isInstalled(it.packageName) }.distinctBy { it.packageName }
