@@ -17,8 +17,11 @@ jobs:
           python-version: '3.12'
       - name: Android SDK
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.22.1"
+          SM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SM" --licenses > /dev/null || true
+          "$SM" --list | grep -E "platforms;android-3[6-9]|build-tools;3[6-9]|ndk;29|cmake;3.22" || true
+          "$SM" "platforms;android-37.0" || "$SM" "platforms;android-37"
+          "$SM" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.22.1"
       - name: Fetch cores
         run: cores/fetch_cores.sh mupen64plus_next_gles3 ppsspp
       - name: Doctor
