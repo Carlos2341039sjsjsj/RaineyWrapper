@@ -1,4 +1,4 @@
-out = (PUBLIC_OUTPUT if public else OUTPUT) / "RaineyWrapper.apk"out = (PUBLIC_OUTPUT if public else OUTPUT) / "RaineyWrapper v3.apk"#!/usr/bin/env python3
+#!/usr/bin/env python3
 """raineywrapper: turn a game ROM into a standalone Android APK.
 
     raineywrapper build <rom> [--title T] [--icon icon.png] [--package-suffix s] [--install]
