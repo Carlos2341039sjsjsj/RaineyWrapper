@@ -7,6 +7,11 @@ android {
         }
     }
 }
+applicationVariants.all { variant ->
+    variant.outputs.all { output ->
+        outputFileName = "RaineyWrapper.apk"
+    }
+}
 
 plugins {
     id("com.android.application")
