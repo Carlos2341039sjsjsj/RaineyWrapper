@@ -360,6 +360,10 @@ class GameActivity : ComponentActivity() {
 
     private fun menuItems() = listOfNotNull(
         GameMenu.Item({ "Resume" }) { closeMenu() },
+        GameMenu.Item({ "Edit controls" }, { touchControlsEnabled() }) {
+            closeMenu()
+            overlay?.beginEdit()
+        },
         GameMenu.Item({ "Save state" }, { gameRunning }) { saveState() },
         GameMenu.Item({ "Load state" }, { gameRunning && saves.hasState() }) { loadState() },
         GameMenu.Item({ "Reset game" }, { gameRunning }) {
