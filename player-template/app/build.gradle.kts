@@ -1,20 +1,3 @@
-outputFileName = "RaineyWrapper v3.apk""
-
-android {
-    // ... (mantén tus configuraciones existentes aquí) ...
-
-    applicationVariants.all { variant ->
-        variant.outputs.all { output ->
-            outputFileName = "RaineyWrapper.apk"
-        }
-    }
-}
-applicationVariants.all { variant ->
-    variant.outputs.all { output ->
-        outputFileName = "RaineyWrapper.apk"
-    }
-}
-
 plugins {
     id("com.android.application")
 }
