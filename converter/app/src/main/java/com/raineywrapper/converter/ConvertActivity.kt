@@ -230,7 +230,7 @@ class ConvertActivity : GamepadActivity() {
 
     private fun applyStorageDefault() {
         val external = source.system.isExternal
-        linkRadio.isEnabled = source.canLink
+        linkRadio.isEnabled = source.canLink && external
         // External emulators read the file in place; PS2 images are too big to bundle anyway.
         embedRadio.isEnabled = !external
         val link = source.canLink && external
@@ -344,7 +344,7 @@ class ConvertActivity : GamepadActivity() {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         listOf(titleInput, systemSpinner, emulatorSpinner, convertButton).forEach { it.isEnabled = !value }
         embedRadio.isEnabled = !value && !source.system.isExternal
-        linkRadio.isEnabled = !value && source.canLink
+        linkRadio.isEnabled = !value && source.canLink && source.system.isExternal
         if (value) {
             doneRow.visibility = View.GONE
             progress.visibility = View.VISIBLE
