@@ -27,6 +27,43 @@
         "psp"
       ],
       "disc": true
+    },
+    "gamecube": {
+      "name": "GameCube",
+      "core": "dolphin",
+      "extensions": [
+        "iso",
+        "rvz",
+        "gcm",
+        "gcz",
+        "ciso"
+      ],
+      "folders": [
+        "gc",
+        "gamecube",
+        "ngc",
+        "wii&ngc",
+        "wiingc"
+      ],
+      "disc": true
+    },
+    "wii": {
+      "name": "Wii",
+      "core": "dolphin",
+      "extensions": [
+        "wbfs",
+        "iso",
+        "rvz",
+        "wia",
+        "gcz",
+        "ciso"
+      ],
+      "folders": [
+        "wii",
+        "wii&ngc",
+        "wiingc"
+      ],
+      "disc": true
     }
   }
 }
