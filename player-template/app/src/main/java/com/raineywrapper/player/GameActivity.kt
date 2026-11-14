@@ -174,7 +174,12 @@ class GameActivity : ComponentActivity() {
         )
 
         overlay = TouchOverlay(this, TouchOverlay.layoutFor(config.system, startedWiiController),
-            onKey = { action, key -> view.sendKeyEvent(action, key, 0) },
+            onKey = { action, key ->
+                view.sendKeyEvent(action, key, 0)
+                if (config.system == "n64" && key == android.view.KeyEvent.KEYCODE_BUTTON_L2) {
+                    view.sendKeyEvent(action, android.view.KeyEvent.KEYCODE_BUTTON_R2, 0)
+                }
+            },
             onAnalog = { right, x, y ->
                 val source = if (right) GLRetroView.MOTION_SOURCE_ANALOG_RIGHT else GLRetroView.MOTION_SOURCE_ANALOG_LEFT
                 view.sendMotionEvent(source, x, y, 0)
