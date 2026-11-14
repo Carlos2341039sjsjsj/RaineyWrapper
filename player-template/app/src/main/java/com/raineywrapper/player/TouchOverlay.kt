@@ -1,3 +1,8 @@
+git add -A
+git commit -m "Add N64 Z button matching L button style"
+git push
+cd ~/RaineyWrapper
+nano $(find . -name "TouchOverlay.kt")
 package com.raineywrapper.player
 
 import android.annotation.SuppressLint
@@ -56,7 +61,11 @@ class TouchOverlay(
         private const val L2 = KeyEvent.KEYCODE_BUTTON_L2
         private const val R2 = KeyEvent.KEYCODE_BUTTON_R2
         private const val MENU = -1
-
+val zW = unit * 1.9f
+        val zH = unit * 0.85f
+        val zX = margin
+        val zY = margin + 2 * (zH + unit * 0.25f)
+        controls += Control("Z", KeyEvent.KEYCODE_BUTTON_L2, RectF(zX, zY, zX + zW, zY + zH))
         fun layoutFor(system: String, wiiController: WiiController = WiiController.NUNCHUK): Layout = when (system) {
             "gba" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), listOf("L" to L, "R" to R))
             "gb", "sms", "gg" -> Layout(listOf(Face(if (system == "gb") "B" else "1", B, -0.45f, 0.25f), Face(if (system == "gb") "A" else "2", A, 0.45f, -0.25f)), emptyList())
