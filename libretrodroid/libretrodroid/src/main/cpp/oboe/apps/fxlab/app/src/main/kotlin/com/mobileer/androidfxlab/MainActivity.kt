@@ -1,4 +1,26 @@
-/*
+// Método para abrir el explorador de archivos y seleccionar la ISO de GC/Wii
+fun openGameFilePicker() {
+    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+        addCategory(Intent.CATEGORY_OPENABLE)
+        type = "*/*" // O puedes filtrar por extensiones específicas
+        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+            "application/x-iso9660-image", 
+            "application/octet-stream"
+        ))
+    }
+    startActivityForResult(intent, 1001)
+}override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+    if (requestCode == 1001 && resultCode == RESULT_OK) {
+        data?.data?.let { uri ->
+            // Obtener la ruta real o persistir los permisos de acceso al archivo
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            
+            // Pasar la URI o ruta del archivo ISO al núcleo/emulador
+            startGameWithIso(uri.toString())
+        }
+    }
+}/*
  * Copyright  2019 Google LLC
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
