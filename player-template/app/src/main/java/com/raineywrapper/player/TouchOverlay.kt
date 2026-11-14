@@ -276,6 +276,12 @@ class TouchOverlay(
         val y = event.y
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                val o = optRects().indexOfFirst { it.contains(x, y) }
+                if (o >= 0) {
+                    optPress(o)
+                    invalidate()
+                    return true
+                }
                 val b = panelRects().indexOfFirst { it.contains(x, y) }
                 if (b >= 0) {
                     draggingEl = false
@@ -306,6 +312,7 @@ class TouchOverlay(
 
     private fun drawEditor(canvas: Canvas) {
         if (!editMode) return
+        drawOptions(canvas)
         val rects = panelRects()
         panelText.textSize = rects[0].height() * 0.4f
         rects.forEachIndexed { i, r ->
@@ -512,7 +519,56 @@ class TouchOverlay(
         stick.x = x
         stick.y = y
         onAnalog(stick.right, x, y)
+        if (!stick.right && stickDpad) stickToDpad(x, y)
         invalidate()
+    }
+
+    private var stickDpad = layoutPrefs.getBoolean("o:dpad", true)
+    private var deadzone = layoutPrefs.getFloat("o:dead", 0.5f)
+
+    private fun stickToDpad(x: Float, y: Float) {
+        val t = deadzone
+        val keys = mutableSetOf<Int>()
+        if (x < -t) keys += KeyEvent.KEYCODE_DPAD_LEFT
+        if (x > t) keys += KeyEvent.KEYCODE_DPAD_RIGHT
+        if (y < -t) keys += KeyEvent.KEYCODE_DPAD_UP
+        if (y > t) keys += KeyEvent.KEYCODE_DPAD_DOWN
+        update(-100, keys)
+    }
+
+    private fun optRects(): List<RectF> {
+        val p = panelRects()[0]
+        val u = min(width, height) / 10f
+        val bw = u * 3.4f
+        val gap = u * 0.2f
+        val x0 = width / 2f - (bw * 2 + gap) / 2f
+        val y0 = p.bottom + gap
+        return (0 until 2).map { RectF(x0 + it * (bw + gap), y0, x0 + it * (bw + gap) + bw, y0 + p.height()) }
+    }
+
+    private fun optLabel(i: Int): String =
+        if (i == 0) "Stick>Cruz: " + (if (stickDpad) "ON" else "OFF")
+        else "Zona: " + Math.round(deadzone * 100) + "%"
+
+    private fun optPress(i: Int) {
+        val e = layoutPrefs.edit()
+        if (i == 0) {
+            stickDpad = !stickDpad
+            e.putBoolean("o:dpad", stickDpad)
+        } else {
+            deadzone = if (deadzone >= 0.69f) 0.3f else deadzone + 0.1f
+            e.putFloat("o:dead", deadzone)
+        }
+        e.apply()
+    }
+
+    private fun drawOptions(canvas: Canvas) {
+        val r = optRects()
+        panelText.textSize = r[0].height() * 0.38f
+        r.forEachIndexed { i, rc ->
+            canvas.drawRoundRect(rc, rc.height() / 2, rc.height() / 2, panelFill)
+            canvas.drawText(optLabel(i), rc.centerX(), rc.centerY() + panelText.textSize / 3, panelText)
+        }
     }
 
     private fun releaseStick(stick: Stick) {
@@ -520,6 +576,7 @@ class TouchOverlay(
         stick.x = 0f
         stick.y = 0f
         onAnalog(stick.right, 0f, 0f)
+        if (!stick.right) update(-100, emptySet())
         invalidate()
     }
 
