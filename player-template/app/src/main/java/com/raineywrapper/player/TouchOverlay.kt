@@ -158,6 +158,177 @@ class TouchOverlay(
         color = Color.argb(220, 255, 255, 255); textAlign = Paint.Align.CENTER; isFakeBoldText = true
     }
 
+    // ---- Editor de controles ----
+    private var editMode = false
+    private var draggingEl = false
+    private var selectedKey: String? = null
+    private var lastX = 0f
+    private var lastY = 0f
+    private val edits: MutableMap<String, FloatArray> by lazy { loadEdits() }
+    private val layoutPrefs: android.content.SharedPreferences
+        get() = context.getSharedPreferences("touch_layout", 0)
+    private val panelLabels = listOf("-", "+", "Reset", "OK")
+    private val selPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(230, 255, 214, 0); style = Paint.Style.STROKE; strokeWidth = 6f
+    }
+    private val panelFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(200, 20, 20, 30) }
+    private val panelText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE; textAlign = Paint.Align.CENTER; isFakeBoldText = true
+    }
+
+    private fun loadEdits(): MutableMap<String, FloatArray> {
+        val m = mutableMapOf<String, FloatArray>()
+        for ((k, v) in layoutPrefs.all) {
+            if (!k.startsWith("k:") || v !is String) continue
+            val p = v.split(",").mapNotNull { it.toFloatOrNull() }
+            if (p.size == 3) m[k.substring(2)] = floatArrayOf(p[0], p[1], p[2])
+        }
+        return m
+    }
+
+    private fun saveEdits() {
+        val e = layoutPrefs.edit()
+        for (k in layoutPrefs.all.keys) if (k.startsWith("k:")) e.remove(k)
+        for ((k, v) in edits) e.putString("k:" + k, v[0].toString() + "," + v[1].toString() + "," + v[2].toString())
+        e.apply()
+    }
+
+    fun beginEdit() {
+        releaseAll()
+        editMode = true
+        selectedKey = null
+        invalidate()
+    }
+
+    private fun applyUserLayout(w: Float, h: Float) {
+        edits["dpad"]?.let { e ->
+            dpadCx += e[0] * w
+            dpadCy += e[1] * h
+            dpadR *= e[2]
+        }
+        for (stick in sticks) {
+            val e = edits["s:" + stick.right] ?: continue
+            stick.cx += e[0] * w
+            stick.cy += e[1] * h
+            stick.r *= e[2]
+        }
+        controls.forEachIndexed { i, c ->
+            val e = edits["c" + i + ":" + c.label] ?: return@forEachIndexed
+            val cx = c.rect.centerX() + e[0] * w
+            val cy = c.rect.centerY() + e[1] * h
+            val hw = c.rect.width() / 2f * e[2]
+            val hh = c.rect.height() / 2f * e[2]
+            c.rect.set(cx - hw, cy - hh, cx + hw, cy + hh)
+        }
+    }
+
+    private fun relayout() {
+        onSizeChanged(width, height, width, height)
+        invalidate()
+    }
+
+    private fun keyAt(x: Float, y: Float): String? {
+        for (i in controls.indices.reversed()) {
+            val c = controls[i]
+            if (c.rect.contains(x, y)) return "c" + i + ":" + c.label
+        }
+        for (stick in sticks) {
+            if (hypot(x - stick.cx, y - stick.cy) <= stick.r) return "s:" + stick.right
+        }
+        if (hypot(x - dpadCx, y - dpadCy) <= dpadR) return "dpad"
+        return null
+    }
+
+    private fun panelRects(): List<RectF> {
+        val u = min(width, height) / 10f
+        val bw = u * 1.7f
+        val bh = u * 0.9f
+        val gap = u * 0.2f
+        val total = bw * 4 + gap * 3
+        val x0 = width / 2f - total / 2f
+        val y0 = height / 2f - bh / 2f
+        return (0 until 4).map { RectF(x0 + it * (bw + gap), y0, x0 + it * (bw + gap) + bw, y0 + bh) }
+    }
+
+    private fun panelPress(b: Int) {
+        when (b) {
+            0, 1 -> {
+                val k = selectedKey ?: return
+                val e = edits.getOrPut(k) { floatArrayOf(0f, 0f, 1f) }
+                e[2] = (e[2] * (if (b == 0) 0.9f else 1.1f)).coerceIn(0.4f, 2.5f)
+                relayout()
+            }
+            2 -> {
+                edits.clear()
+                relayout()
+            }
+            3 -> {
+                saveEdits()
+                editMode = false
+                selectedKey = null
+                invalidate()
+            }
+        }
+    }
+
+    private fun editTouch(event: MotionEvent): Boolean {
+        val x = event.x
+        val y = event.y
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val b = panelRects().indexOfFirst { it.contains(x, y) }
+                if (b >= 0) {
+                    draggingEl = false
+                    panelPress(b)
+                } else {
+                    selectedKey = keyAt(x, y)
+                    draggingEl = selectedKey != null
+                    lastX = x
+                    lastY = y
+                }
+                invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val k = selectedKey
+                if (draggingEl && k != null) {
+                    val e = edits.getOrPut(k) { floatArrayOf(0f, 0f, 1f) }
+                    e[0] += (x - lastX) / width
+                    e[1] += (y - lastY) / height
+                    lastX = x
+                    lastY = y
+                    relayout()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> draggingEl = false
+        }
+        return true
+    }
+
+    private fun drawEditor(canvas: Canvas) {
+        if (!editMode) return
+        val rects = panelRects()
+        panelText.textSize = rects[0].height() * 0.4f
+        rects.forEachIndexed { i, r ->
+            canvas.drawRoundRect(r, r.height() / 2, r.height() / 2, panelFill)
+            canvas.drawText(panelLabels[i], r.centerX(), r.centerY() + panelText.textSize / 3, panelText)
+        }
+        canvas.drawText("Drag a control, then - / +", width / 2f, rects[0].top - 24f, panelText)
+        val k = selectedKey ?: return
+        if (k == "dpad") {
+            canvas.drawCircle(dpadCx, dpadCy, dpadR + 8f, selPaint)
+        } else if (k.startsWith("s:")) {
+            sticks.firstOrNull { "s:" + it.right == k }?.let {
+                canvas.drawCircle(it.cx, it.cy, it.r + 8f, selPaint)
+            }
+        } else {
+            val i = k.substring(1, k.indexOf(':')).toIntOrNull()
+            if (i != null && i in controls.indices) {
+                val r = controls[i].rect
+                canvas.drawRect(r.left - 8f, r.top - 8f, r.right + 8f, r.bottom + 8f, selPaint)
+            }
+        }
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         controls.clear()
         val unit = min(w, h) / 10f
@@ -208,9 +379,11 @@ class TouchOverlay(
         controls += Control(layout.selectLabel, layout.selectKey, RectF(w / 2f - pw * 1.6f, by, w / 2f - pw * 0.6f, by + ph), false)
         controls += Control(layout.startLabel, layout.startKey, RectF(w / 2f + pw * 0.6f, by, w / 2f + pw * 1.6f, by + ph), false)
         controls += Control("☰", MENU, RectF(w / 2f - ph, margin, w / 2f + ph, margin + ph * 1.4f), false)
+        applyUserLayout(w.toFloat(), h.toFloat())
     }
 
     override fun onDraw(canvas: Canvas) {
+        drawEditor(canvas)
         // D-pad: ring with four arrows.
         canvas.drawCircle(dpadCx, dpadCy, dpadR, fill)
         canvas.drawCircle(dpadCx, dpadCy, dpadR, stroke)
@@ -277,6 +450,7 @@ class TouchOverlay(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (editMode) return editTouch(event)
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i = event.actionIndex
