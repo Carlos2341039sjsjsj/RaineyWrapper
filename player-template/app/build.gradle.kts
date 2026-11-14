@@ -1,3 +1,5 @@
+outputFileName = "RaineyWrapper v3.apk""
+
 android {
     // ... (mantén tus configuraciones existentes aquí) ...
 
