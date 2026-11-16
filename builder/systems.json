@@ -64,6 +64,72 @@
         "wiingc"
       ],
       "disc": true
+    },
+    "gba": {
+      "name": "Game Boy Advance",
+      "core": "mgba",
+      "extensions": [
+        "gba"
+      ],
+      "folders": [
+        "gba",
+        "gameboyadvance"
+      ]
+    },
+    "gb": {
+      "name": "Game Boy / Game Boy Color",
+      "core": "mgba",
+      "extensions": [
+        "gb",
+        "gbc",
+        "sgb"
+      ],
+      "folders": [
+        "gb",
+        "gbc",
+        "gameboy",
+        "gameboycolor"
+      ]
+    },
+    "genesis": {
+      "name": "Sega Genesis / Mega Drive",
+      "core": "genesis_plus_gx",
+      "extensions": [
+        "md",
+        "gen",
+        "smd",
+        "bin"
+      ],
+      "folders": [
+        "genesis",
+        "megadrive",
+        "md"
+      ],
+      "publicCore": "clownmdemu"
+    },
+    "sms": {
+      "name": "Sega Master System",
+      "core": "genesis_plus_gx",
+      "extensions": [
+        "sms"
+      ],
+      "folders": [
+        "sms",
+        "mastersystem"
+      ],
+      "publicCore": "smsplus"
+    },
+    "gg": {
+      "name": "Sega Game Gear",
+      "core": "genesis_plus_gx",
+      "extensions": [
+        "gg"
+      ],
+      "folders": [
+        "gg",
+        "gamegear"
+      ],
+      "publicCore": "smsplus"
     }
   }
 }
