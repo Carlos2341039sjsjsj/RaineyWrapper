@@ -51,6 +51,8 @@ class GameActivity : ComponentActivity() {
         private const val PREF_TOUCH = "touch_controls"
         private const val PREF_FILTER = "screen_filter"
         private const val PREF_RESOLUTION = "resolution_level"
+  const val PREF_MULTIPLAYER = "multiplayer_level"
+  const val PREF_DOLPHIN_OPT = "dolphin_opt_level"
         private const val PREF_WII_CONTROLLER = "wii_controller"
         private const val PREF_FPS = "fps_counter"
     }
@@ -73,6 +75,8 @@ class GameActivity : ComponentActivity() {
     private var startedResolution = 0
 
     /** Wii controller the core was started with; like resolution, a change needs a restart. */
+    private var startedMultiplayer = 0
+    private var startedDolphin = 1
     private var startedWiiController = WiiController.NUNCHUK
 
     /** Physical Start/Select currently held, for the Start+Select menu shortcut. */
@@ -154,9 +158,11 @@ class GameActivity : ComponentActivity() {
             preferLowLatencyAudio = true
             rumbleEventsEnabled = false
             startedResolution = resolutionLevel()
+        startedMultiplayer = multiplayerLevel()
+        startedDolphin = dolphinLevel()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable)
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         val view = GLRetroView(this, data)
@@ -384,6 +390,14 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_RESOLUTION, (resolutionLevel() + 1) % count).apply()
             menu.refresh()
         },
+        GameMenu.Item({ "Multiplayer: " + multiplayerLabel() }) {
+            prefs().edit().putInt(PREF_MULTIPLAYER, (multiplayerLevel() + 1) % 3).apply()
+            menu.refresh()
+        }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
+            prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
+            menu.refresh()
+        }.takeIf { config.system in listOf("wii", "gamecube", "gc") },
         GameMenu.Item({ "Wii controller: " + wiiController().label }) {
             val next = WiiController.entries[(wiiController().ordinal + 1) % WiiController.entries.size]
             prefs().edit().putString(PREF_WII_CONTROLLER, next.name).apply()
@@ -393,6 +407,8 @@ class GameActivity : ComponentActivity() {
             {
                 when {
                     resolutionLevel() != startedResolution -> "Restart game to apply resolution"
+                    multiplayerLevel() != startedMultiplayer -> "Restart game to apply multiplayer"
+                    dolphinLevel() != startedDolphin -> "Restart game to apply optimize"
                     wiiController() != startedWiiController -> "Restart game to apply controller"
                     else -> "Restart game"
                 }
@@ -425,6 +441,18 @@ class GameActivity : ComponentActivity() {
         prefs().getString(PREF_WII_CONTROLLER, null)?.let { name -> WiiController.entries.firstOrNull { it.name == name } }
             ?: WiiController.NUNCHUK
 
+    private fun multiplayerLevel(): Int {
+        return prefs().getInt(PREF_MULTIPLAYER, 0).coerceIn(0, 2)
+    }
+    private fun multiplayerLabel(): String {
+        return listOf("Apagado", "Localhost", "Servidor")[multiplayerLevel()]
+    }
+    private fun dolphinLevel(): Int {
+        return prefs().getInt(PREF_DOLPHIN_OPT, 1).coerceIn(0, 2)
+    }
+    private fun dolphinLabel(): String {
+        return listOf("Rendimiento", "Equilibrado", "Calidad")[dolphinLevel()]
+    }
     private fun resolutionLevel(): Int {
         val count = InternalResolution.levels(config.system).size
         return prefs().getInt(PREF_RESOLUTION, 0).coerceIn(0, maxOf(count - 1, 0))
