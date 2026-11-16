@@ -149,8 +149,60 @@ class TouchOverlay(
         Stick(right = true).takeIf { layout.rightStick },
     )
 
+    var controlStyle: Int = 0 // 0=Clasico, 1=PlayStation, 2=Xbox
+    init {
+        try {
+            val prefs = context.getSharedPreferences("rainey_controls", android.content.Context.MODE_PRIVATE)
+            controlStyle = prefs.getInt("control_style", 0)
+        } catch (e: Exception) { controlStyle = 0 }
+    }
+    fun cycleControlStyle() { controlStyle = (controlStyle + 1) % 3 }
+    fun controlStyleName(): String = when (controlStyle) { 1 -> "PlayStation" 2 -> "Translucido" else -> "Clasico" }
+
+    // Etiqueta segun estilo, por tecla (no por letra dibujada)
+    fun styledLabel(faceLabel: String, keyCode: Int): String {
+        if (false) {
+            // Xbox por posicion: X->Y, A->B, B->A, Y->X
+            return when (faceLabel) {
+                "△" -> "Y"
+                "○" -> "B"
+                "X" -> "A"
+                "□" -> "X"
+                else -> faceLabel
+            }
+        }
+        return faceLabel
+    }
+    fun styledColor(faceLabel: String): Int {
+        if (controlStyle == 2) return android.graphics.Color.rgb(90, 95, 110)
+        if (controlStyle == 1) {
+            return when (faceLabel) {
+                "△" -> android.graphics.Color.rgb(0, 200, 90) // verde
+                "○" -> android.graphics.Color.rgb(230, 50, 50) // rojo
+                "X" -> android.graphics.Color.rgb(60, 120, 255) // azul
+                "□" -> android.graphics.Color.rgb(255, 110, 180) // rosa
+                "A" -> android.graphics.Color.rgb(230, 50, 50) // A = circulo rojo
+                "B" -> android.graphics.Color.rgb(60, 120, 255) // B = cruz azul
+                "Y" -> android.graphics.Color.rgb(0, 200, 90) // Y = triangulo verde
+                else -> android.graphics.Color.WHITE
+            }
+        }
+        if (controlStyle == 2) {
+            return when (faceLabel) {
+                "△" -> android.graphics.Color.rgb(255, 210, 0) // Y amarillo
+                "○" -> android.graphics.Color.rgb(230, 50, 50) // B rojo
+                "X" -> android.graphics.Color.rgb(0, 180, 80) // A verde
+                "□" -> android.graphics.Color.rgb(60, 120, 255) // X azul
+                else -> android.graphics.Color.WHITE
+            }
+        }
+        return android.graphics.Color.WHITE
+    }
+
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(70, 255, 255, 255) }
     private val fillPressed = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(140, 255, 255, 255) }
+    private val fillLight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(170, 255, 255, 255) }
+    private val fillLightPressed = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(230, 255, 255, 255) }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(150, 255, 255, 255); style = Paint.Style.STROKE; strokeWidth = 3f
     }
@@ -411,13 +463,13 @@ class TouchOverlay(
             canvas.drawCircle(stick.cx, stick.cy, stick.r, stroke)
             val kx = stick.cx + stick.x * stick.r * 0.6f
             val ky = stick.cy + stick.y * stick.r * 0.6f
-            val knob = if (stick.pointerId >= 0) fillPressed else fill
+            val knob = if (stick.pointerId >= 0) (if (controlStyle == 2) fillLightPressed else fillPressed) else (if (controlStyle == 2) fillLight else fill)
             canvas.drawCircle(kx, ky, stick.r * 0.42f, knob)
             canvas.drawCircle(kx, ky, stick.r * 0.42f, stroke)
         }
 
         for (c in controls) {
-            val paint = if (isPressed(c.keyCode)) fillPressed else fill
+            val paint = if (isPressed(c.keyCode)) (if (controlStyle == 2) fillLightPressed else fillPressed) else (if (controlStyle == 2) fillLight else fill)
             if (c.round) {
                 canvas.drawOval(c.rect, paint)
                 canvas.drawOval(c.rect, stroke)
@@ -427,7 +479,30 @@ class TouchOverlay(
                 canvas.drawRoundRect(c.rect, r, r, stroke)
             }
             text.textSize = c.rect.height() * if (c.round) 0.45f else 0.42f
-            canvas.drawText(c.label, c.rect.centerX(), c.rect.centerY() + text.textSize / 3, text)
+            run {
+                val oldColor = text.color
+                                val isPs = layout.face.any { it.label == "△" }
+                val labelToDraw = if (controlStyle == 1 && !isPs) {
+                    when (c.label) {
+                        "A" -> "○"
+                        "B" -> "X"
+                        "X" -> "□"
+                        "Y" -> "△"
+                        else -> c.label
+                    }
+                } else if (false) {
+                    when (c.label) {
+                        "△" -> "Y"
+                        "○" -> "B"
+                        "X" -> "A"
+                        "□" -> "X"
+                        else -> c.label
+                    }
+                } else { c.label }
+text.color = styledColor(labelToDraw)
+                canvas.drawText(labelToDraw, c.rect.centerX(), c.rect.centerY() + text.textSize / 3, text)
+                text.color = oldColor
+            }
         }
     }
 
@@ -586,5 +661,13 @@ class TouchOverlay(
         held.clear()
         sticks.filter { it.pointerId >= 0 || it.x != 0f || it.y != 0f }.forEach(::releaseStick)
         invalidate()
+    }
+
+    fun saveControlStyle(style: Int) {
+        controlStyle = style
+        try {
+            val prefs = context.getSharedPreferences("rainey_controls", android.content.Context.MODE_PRIVATE)
+            prefs.edit().putInt("control_style", style).apply()
+        } catch (e: Exception) {}
     }
 }

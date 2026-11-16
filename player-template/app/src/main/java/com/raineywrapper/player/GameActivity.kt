@@ -50,6 +50,7 @@ class GameActivity : ComponentActivity() {
         private const val PREFS = "player"
         private const val PREF_TOUCH = "touch_controls"
         private const val PREF_FILTER = "screen_filter"
+    private const val PREF_CONTROL_STYLE = "control_style"
         private const val PREF_RESOLUTION = "resolution_level"
   const val PREF_MULTIPLAYER = "multiplayer_level"
   const val PREF_DOLPHIN_OPT = "dolphin_opt_level"
@@ -403,18 +404,19 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putString(PREF_WII_CONTROLLER, next.name).apply()
             menu.refresh()
         }.takeIf { config.system == "wii" },
-        GameMenu.Item(
-            {
-                when {
-                    resolutionLevel() != startedResolution -> "Restart game to apply resolution"
-                    multiplayerLevel() != startedMultiplayer -> "Restart game to apply multiplayer"
-                    dolphinLevel() != startedDolphin -> "Restart game to apply optimize"
-                    wiiController() != startedWiiController -> "Restart game to apply controller"
-                    else -> "Restart game"
-                }
+        GameMenu.Item({ "Estilo de controles: " + controlStyleName() }) {
+                val next = (controlStyle() + 1) % 3
+                getSharedPreferences("rainey", MODE_PRIVATE).edit().putInt(PREF_CONTROL_STYLE, next).apply()
+                overlay?.controlStyle = next
+                overlay?.invalidate()
             },
-            { gameRunning },
-        ) { restartGame() },
+            GameMenu.Item({ when {
+                resolutionLevel() != startedResolution -> "Restart game to apply resolution"
+                multiplayerLevel() != startedMultiplayer -> "Restart game to apply multiplayer"
+                dolphinLevel() != startedDolphin -> "Restart game to apply optimize"
+                wiiController() != startedWiiController -> "Restart game to apply controller"
+                else -> "Restart game"
+            } }, { gameRunning }) { restartGame() },
         GameMenu.Item({ "FPS counter: " + if (fpsCounterEnabled()) "On" else "Off" }) {
             val enabled = !fpsCounterEnabled()
             prefs().edit().putBoolean(PREF_FPS, enabled).apply()
@@ -436,6 +438,8 @@ class GameActivity : ComponentActivity() {
 
     private fun screenFilter(): ScreenFilter =
         prefs().getString(PREF_FILTER, null)?.let { name -> ScreenFilter.entries.firstOrNull { it.name == name } } ?: ScreenFilter.SHARP
+    private fun controlStyle(): Int = getSharedPreferences("rainey", MODE_PRIVATE).getInt(PREF_CONTROL_STYLE, 0)
+    private fun controlStyleName(): String = when (controlStyle()) { 1 -> "PlayStation" 2 -> "Xbox" else -> "Clasico" }
 
     private fun wiiController(): WiiController =
         prefs().getString(PREF_WII_CONTROLLER, null)?.let { name -> WiiController.entries.firstOrNull { it.name == name } }
