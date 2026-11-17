@@ -274,7 +274,6 @@ class GameActivity : ComponentActivity() {
     private fun dolphinVariables() = arrayOf(
         // Compile shaders in the background and skip drawing until they're ready, instead of
         // freezing the game each time a new effect appears (Dolphin's main source of stutter).
-        Variable("dolphin_shader_compilation_mode", "3"),
         // Dolphin logs every disc read at its default level; errors only.
         Variable("dolphin_log_level", "2"),
         // No "Video Info" banner and other emulator messages over the game.

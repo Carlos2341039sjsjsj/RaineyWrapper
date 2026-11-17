@@ -16,11 +16,32 @@ object PpssppMultiplayer {
     )
 }
 
-// UNVERIFIED: dolphin keys/values not checked against the core.
+// Claves y valores comprobados con `strings` sobre libdolphin_libretro_android.so:
+// booleanos = "enabled"/"disabled"; shaders = "Async (UberShaders)" / "Sync (UberShaders)".
 object DolphinOptimize {
+    private fun on(key: String) = Variable(key, "enabled")
+    private fun off(key: String) = Variable(key, "disabled")
+
     fun levels() = listOf(
-        ExtraLevel("Rendimiento", listOf(Variable("dolphin_shader_compilation_mode", "3"))),
-        ExtraLevel("Equilibrado", emptyList()),
-        ExtraLevel("Calidad", emptyList()),
+        ExtraLevel("Rendimiento", listOf(
+            Variable("dolphin_shader_compilation_mode", "Async (UberShaders)"),
+            on("dolphin_fastmem"),
+            on("dolphin_main_cpu_thread"),
+            on("dolphin_fast_depth_calculation"),
+            on("dolphin_fast_texture_sampling"),
+            on("dolphin_fast_disc_speed"),
+            on("dolphin_efb_to_texture"),
+            off("dolphin_main_accurate_cpu_cache"),
+        )),
+        ExtraLevel("Equilibrado", listOf(
+            Variable("dolphin_shader_compilation_mode", "Async (UberShaders)"),
+            on("dolphin_fastmem"),
+            on("dolphin_main_cpu_thread"),
+        )),
+        ExtraLevel("Calidad", listOf(
+            Variable("dolphin_shader_compilation_mode", "Sync (UberShaders)"),
+            off("dolphin_fast_depth_calculation"),
+            off("dolphin_fast_texture_sampling"),
+        )),
     )
 }
