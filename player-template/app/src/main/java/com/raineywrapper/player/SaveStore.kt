@@ -88,7 +88,7 @@ class SaveStore(context: Context) {
 
     /** Extracts into <system>/PPSSPP/PSP/. Loose save folders go under SAVEDATA/. */
     private fun unzipPsp(input: java.io.InputStream): Int {
-        val base = File(systemDir, "PPSSPP/PSP").apply { mkdirs() }
+        val base = File(savesDir, "PSP").apply { mkdirs() }
         val baseCanon = base.canonicalPath
         var count = 0
         java.util.zip.ZipInputStream(input).use { zip ->
@@ -98,7 +98,7 @@ class SaveStore(context: Context) {
                     var path = entry.name.replace('\\', '/').removePrefix("/")
                     if (path.startsWith("PSP/")) path = path.removePrefix("PSP/")
                     val top = path.substringBefore('/')
-                    if (top != "SAVEDATA" && top != "TEXTURES" && top != "GAME") path = "SAVEDATA/$path"
+                    if (top != "SAVEDATA" && top != "TEXTURES" && top != "GAME" && top != "Cheats") path = "SAVEDATA/$path"
                     val out = File(base, path)
                     // Zip-slip guard: never write outside the PSP folder.
                     if (out.canonicalPath.startsWith(baseCanon + File.separator)) {
