@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.StatFs
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.provider.Settings
@@ -59,6 +60,8 @@ class GameActivity : ComponentActivity() {
         private const val PREF_FPS = "fps_counter"
         private const val PREF_MOD_PATH = "mod_path"
         private const val PREF_PSP_GFX = "psp_gfx_level"
+        private const val PREF_MOVED_PATH = "moved_path"
+        private const val PREF_MOVED_FROM = "moved_from"
     }
 
     private lateinit var container: FrameLayout
@@ -137,7 +140,7 @@ class GameActivity : ComponentActivity() {
                     config.installSystemFiles(this@GameActivity, saves.systemDir)
                     config.installCoreData(this@GameActivity, saves.systemDir)
                     var lastPercent = -1
-                    config.extractRom(this@GameActivity) { progress ->
+                    movedFile()?.also { File(config.rom).delete() } ?: config.extractRom(this@GameActivity) { progress ->
                         val percent = (progress * 100).toInt()
                         if (percent != lastPercent) {
                             lastPercent = percent
@@ -453,6 +456,13 @@ class GameActivity : ComponentActivity() {
             pickMod.launch(arrayOf("*/*"))
         },
         GameMenu.Item({ "Back to original game" }, { modFile() != null }) { clearMod() },
+        GameMenu.Item(
+            { if (movedFile() != null) "Game is stored in the app" else "Move game into app (free space)" },
+            { canMoveGame() },
+        ) {
+            closeMenu()
+            moveGameIntoApp()
+        }.takeIf { config.linked },
         GameMenu.Item({ "Quit" }) { finishAndRemoveTask() },
     )
 
@@ -515,6 +525,61 @@ class GameActivity : ComponentActivity() {
         File(filesDir, "mod").listFiles()?.forEach { it.delete() }
         prefs().edit().remove(PREF_MOD_PATH).commit()
         restartGame()
+    }
+
+    /** The copy of a linked game that was moved into app storage; only valid for the same source path. */
+    private fun movedFile(): File? {
+        if (!config.linked) return null
+        if (prefs().getString(PREF_MOVED_FROM, null) != config.rom) return null
+        return prefs().getString(PREF_MOVED_PATH, null)?.let { File(it) }?.takeIf { it.exists() }
+    }
+
+    private fun canMoveGame() =
+        config.linked && config.files.size <= 1 && movedFile() == null && File(config.rom).exists()
+
+    /**
+     * Copies the linked game into app storage, then restarts. The original is deleted at the
+     * next start (prepareAndStart), once the core no longer has it open.
+     */
+    private fun moveGameIntoApp() {
+        val src = File(config.rom)
+        val free = StatFs(filesDir.absolutePath).availableBytes
+        if (free < src.length() + (50L shl 20)) {
+            Toast.makeText(this, "No hay espacio libre suficiente para mover el juego", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "Moviendo el juego... no cierres la app", Toast.LENGTH_LONG).show()
+        lifecycleScope.launch {
+            val error = withContext(Dispatchers.IO) {
+                try {
+                    val dir = File(filesDir, "game").apply { mkdirs() }
+                    dir.listFiles()?.forEach { it.delete() }
+                    val tmp = File(dir, src.name + ".tmp")
+                    src.inputStream().use { input -> tmp.outputStream().use { input.copyTo(it, 1 shl 20) } }
+                    if (tmp.length() != src.length()) {
+                        tmp.delete()
+                        "la copia quedo incompleta"
+                    } else {
+                        val target = File(dir, src.name)
+                        tmp.renameTo(target)
+                        prefs().edit()
+                            .putString(PREF_MOVED_PATH, target.absolutePath)
+                            .putString(PREF_MOVED_FROM, config.rom)
+                            .commit()
+                        null
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to move game", e)
+                    e.message ?: "error"
+                }
+            }
+            if (error == null) {
+                Toast.makeText(this@GameActivity, "Listo. Reiniciando para borrar el original", Toast.LENGTH_LONG).show()
+                restartGame()
+            } else {
+                Toast.makeText(this@GameActivity, "No se pudo mover: $error", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun importSave(uri: Uri) {
