@@ -45,3 +45,24 @@ object DolphinOptimize {
         )),
     )
 }
+
+// Claves comprobadas con `strings` sobre libppsspp_libretro_android.so.
+// Valores comprobados: disabled/enabled, Auto/Nearest/Linear/Auto max quality.
+object PpssppGraphics {
+    private fun on(key: String) = Variable(key, "enabled")
+
+    fun levels() = listOf(
+        ExtraLevel("Normal", emptyList()),
+        ExtraLevel("Compatibilidad", listOf(on("ppsspp_skip_gpu_readbacks"))),
+        ExtraLevel("Sin efectos", listOf(
+            on("ppsspp_skip_buffer_effects"),
+            on("ppsspp_skip_gpu_readbacks"))),
+        ExtraLevel("Texturas mod", listOf(on("ppsspp_texture_replacement"))),
+        ExtraLevel("Mod + compat.", listOf(
+            on("ppsspp_texture_replacement"),
+            on("ppsspp_skip_gpu_readbacks"))),
+        ExtraLevel("Suavizado", listOf(
+            on("ppsspp_texture_deposterize"),
+            Variable("ppsspp_texture_filtering", "Auto max quality"))),
+    )
+}

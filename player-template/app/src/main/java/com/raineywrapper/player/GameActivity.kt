@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
@@ -23,6 +24,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -55,6 +57,8 @@ class GameActivity : ComponentActivity() {
   const val PREF_DOLPHIN_OPT = "dolphin_opt_level"
         private const val PREF_WII_CONTROLLER = "wii_controller"
         private const val PREF_FPS = "fps_counter"
+        private const val PREF_MOD_PATH = "mod_path"
+        private const val PREF_PSP_GFX = "psp_gfx_level"
     }
 
     private lateinit var container: FrameLayout
@@ -77,10 +81,18 @@ class GameActivity : ComponentActivity() {
     /** Wii controller the core was started with; like resolution, a change needs a restart. */
     private var startedMultiplayer = 0
     private var startedDolphin = 1
+    private var startedPspGfx = 0
     private var startedWiiController = WiiController.NUNCHUK
 
     /** Physical Start/Select currently held, for the Start+Select menu shortcut. */
     private val heldCombo = mutableSetOf<Int>()
+
+    private val pickMod = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importMod(uri)
+    }
+    private val pickSave = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importSave(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,8 +154,11 @@ class GameActivity : ComponentActivity() {
             }
             loading?.let { container.removeView(it) }
             clearMessage()
-            val sram = withContext(Dispatchers.IO) { saves.readSram() }
-            startEmulator(rom, sram)
+            val sram = withContext(Dispatchers.IO) {
+                saves.applyPendingImports()
+                saves.readSram()
+            }
+            startEmulator(modFile() ?: rom, sram)
         }
     }
 
@@ -160,9 +175,10 @@ class GameActivity : ComponentActivity() {
             startedResolution = resolutionLevel()
         startedMultiplayer = multiplayerLevel()
         startedDolphin = dolphinLevel()
+        startedPspGfx = pspGfxLevel()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         val view = GLRetroView(this, data)
@@ -393,6 +409,10 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_MULTIPLAYER, (multiplayerLevel() + 1) % 3).apply()
             menu.refresh()
         }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "PSP graphics: " + (PpssppGraphics.levels().getOrNull(pspGfxLevel())?.label ?: "-") }) {
+            prefs().edit().putInt(PREF_PSP_GFX, (pspGfxLevel() + 1) % PpssppGraphics.levels().size).apply()
+            menu.refresh()
+        }.takeIf { config.system == "psp" },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
             menu.refresh()
@@ -410,6 +430,7 @@ class GameActivity : ComponentActivity() {
                 resolutionLevel() != startedResolution -> "Restart game to apply resolution"
                 multiplayerLevel() != startedMultiplayer -> "Restart game to apply multiplayer"
                 dolphinLevel() != startedDolphin -> "Restart game to apply optimize"
+                pspGfxLevel() != startedPspGfx -> "Restart game to apply graphics"
                 wiiController() != startedWiiController -> "Restart game to apply controller"
                 else -> "Restart game"
             } }, { gameRunning }) { restartGame() },
@@ -423,12 +444,94 @@ class GameActivity : ComponentActivity() {
             setTouchControls(!touchControlsEnabled())
             menu.refresh()
         },
+        GameMenu.Item({ "Import save" }, { gameRunning }) {
+            closeMenu()
+            pickSave.launch(arrayOf("*/*"))
+        },
+        GameMenu.Item({ "Load game / mod" }, { config.external.isEmpty() }) {
+            closeMenu()
+            pickMod.launch(arrayOf("*/*"))
+        },
+        GameMenu.Item({ "Back to original game" }, { modFile() != null }) { clearMod() },
         GameMenu.Item({ "Quit" }) { finishAndRemoveTask() },
     )
 
     // --- graphics -------------------------------------------------------------
 
     private fun prefs() = getSharedPreferences(PREFS, MODE_PRIVATE)
+
+    private fun pspGfxLevel() =
+        prefs().getInt(PREF_PSP_GFX, 0).coerceIn(0, PpssppGraphics.levels().size - 1)
+
+    // --- mods and save import ----------------------------------------------------
+
+    private val modExtensions = setOf(
+        "iso", "cso", "pbp", "chd", "z64", "n64", "v64", "gcm", "rvz", "wbfs", "ciso", "gcz", "wad", "nfs",
+    )
+
+    /** The mod/replacement game file, when the person loaded one. */
+    private fun modFile(): File? =
+        prefs().getString(PREF_MOD_PATH, null)?.let { File(it) }?.takeIf { it.exists() }
+
+    private fun displayName(uri: Uri): String =
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "mod.bin"
+
+    private fun importMod(uri: Uri) {
+        val name = displayName(uri).replace(Regex("[^A-Za-z0-9._ -]"), "_")
+        if (name.substringAfterLast('.', "").lowercase() !in modExtensions) {
+            Toast.makeText(this, "Formato no soportado: $name", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "Copiando $name... puede tardar", Toast.LENGTH_LONG).show()
+        lifecycleScope.launch {
+            val error = withContext(Dispatchers.IO) {
+                try {
+                    val dir = File(filesDir, "mod").apply { mkdirs() }
+                    dir.listFiles()?.forEach { it.delete() }
+                    val tmp = File(dir, "$name.tmp")
+                    contentResolver.openInputStream(uri)!!.use { input ->
+                        tmp.outputStream().use { input.copyTo(it, 1 shl 20) }
+                    }
+                    val target = File(dir, name)
+                    tmp.renameTo(target)
+                    prefs().edit().putString(PREF_MOD_PATH, target.absolutePath).commit()
+                    null
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to import mod", e)
+                    e.message ?: "error"
+                }
+            }
+            if (error == null) {
+                Toast.makeText(this@GameActivity, "Listo: $name", Toast.LENGTH_SHORT).show()
+                restartGame()
+            } else {
+                Toast.makeText(this@GameActivity, "No se pudo copiar: $error", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun clearMod() {
+        File(filesDir, "mod").listFiles()?.forEach { it.delete() }
+        prefs().edit().remove(PREF_MOD_PATH).commit()
+        restartGame()
+    }
+
+    private fun importSave(uri: Uri) {
+        val name = displayName(uri)
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    contentResolver.openInputStream(uri)!!.use { saves.importFile(name, it, config.system) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to import save", e)
+                    "Error: ${e.message}"
+                }
+            }
+            Toast.makeText(this@GameActivity, result, Toast.LENGTH_LONG).show()
+            if (result.startsWith("OK")) restartGame()
+        }
+    }
 
     private fun fpsCounterEnabled() = prefs().getBoolean(PREF_FPS, false)
 
