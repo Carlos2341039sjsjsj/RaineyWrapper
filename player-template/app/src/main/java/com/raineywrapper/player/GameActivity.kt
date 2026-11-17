@@ -62,6 +62,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_PSP_GFX = "psp_gfx_level"
         private const val PREF_MOVED_PATH = "moved_path"
         private const val PREF_MOVED_FROM = "moved_from"
+        private const val PREF_ASKED_MOVE = "asked_move"
     }
 
     private lateinit var container: FrameLayout
@@ -162,6 +163,7 @@ class GameActivity : ComponentActivity() {
                 saves.readSram()
             }
             startEmulator(modFile() ?: rom, sram)
+            offerMoveGame()
         }
     }
 
@@ -580,6 +582,23 @@ class GameActivity : ComponentActivity() {
                 Toast.makeText(this@GameActivity, "No se pudo mover: $error", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    /** First launch of a linked game: offer to keep a single copy inside the app. Asked once per source file. */
+    private fun offerMoveGame() {
+        if (!canMoveGame()) return
+        if (prefs().getString(PREF_ASKED_MOVE, null) == config.rom) return
+        prefs().edit().putString(PREF_ASKED_MOVE, config.rom).apply()
+        val mb = File(config.rom).length() shr 20
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Liberar espacio")
+            .setMessage(
+                "Mover el juego dentro de la app y borrar el ISO original? Queda una sola copia ($mb MB). " +
+                    "Si desinstalas la app, el juego se borra con ella. Tambien podes hacerlo despues desde el menu.",
+            )
+            .setPositiveButton("Mover y borrar ISO") { _, _ -> moveGameIntoApp() }
+            .setNegativeButton("Ahora no", null)
+            .show()
     }
 
     private fun importSave(uri: Uri) {
