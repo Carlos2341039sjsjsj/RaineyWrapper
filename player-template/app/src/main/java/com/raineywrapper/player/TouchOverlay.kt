@@ -168,7 +168,7 @@ class TouchOverlay(
 
     fun setStyle(style: Int) {
         saveControlStyle(style)
-        invalidate()
+        if (width > 0) relayout() else invalidate()
     }
 
     /** Rombo de 4 botones (SNES / PS / Dreamcast): se puede traducir por posicion entre estilos. */
@@ -418,9 +418,11 @@ class TouchOverlay(
         val mainCy = h - margin - mainR - unit * 0.3f
         val upperR = unit * 1.05f
         val upperCy = (margin + 2 * unit * 0.85f + unit * 0.25f + (mainCy - mainR * 1.45f)) / 2
+        val wiiu = controlStyle == 3 && layout.rightStick
         for (stick in sticks) {
             if (stick.right) {
-                stick.r = upperR; stick.cx = w - margin - mainR; stick.cy = upperCy
+                if (wiiu) { stick.r = mainR * 0.75f; stick.cx = w - margin - mainR; stick.cy = mainCy }
+                else { stick.r = upperR; stick.cx = w - margin - mainR; stick.cy = upperCy }
             } else {
                 stick.r = mainR; stick.cx = mainCx; stick.cy = mainCy
             }
@@ -433,10 +435,11 @@ class TouchOverlay(
 
         val faceR = unit * 0.62f
         val faceCx = w - margin - mainR
-        val faceCy = mainCy
+        val faceCy = if (wiiu) upperCy else mainCy
+        val faceScale = if (wiiu) mainR * 0.95f else mainR * 1.15f
         for (f in layout.face) {
-            val cx = faceCx + f.x * mainR * 1.15f
-            val cy = faceCy + f.y * mainR * 1.15f
+            val cx = faceCx + f.x * faceScale
+            val cy = faceCy + f.y * faceScale
             controls += Control(f.label, f.keyCode, RectF(cx - faceR, cy - faceR, cx + faceR, cy + faceR), true)
         }
 
@@ -450,7 +453,7 @@ class TouchOverlay(
             controls += Control(label, key, RectF(x, y, x + sw, y + sh), false)
         }
 
-        val pw = unit * 1.5f
+        val pw = unit * (if (controlStyle == 3) 1.0f else 1.5f)
         val ph = unit * 0.6f
         val by = h - margin - ph
         controls += Control(layout.selectLabel, layout.selectKey, RectF(w / 2f - pw * 1.6f, by, w / 2f - pw * 0.6f, by + ph), false)
