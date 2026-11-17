@@ -56,6 +56,7 @@ class TouchOverlay(
         private const val L2 = KeyEvent.KEYCODE_BUTTON_L2
         private const val R2 = KeyEvent.KEYCODE_BUTTON_R2
         private const val MENU = -1
+        const val STYLE_COUNT = 4 // Clasico, PlayStation, Xbox, Wii U / Switch
 
         fun layoutFor(system: String, wiiController: WiiController = WiiController.NUNCHUK): Layout = when (system) {
             "gba" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), listOf("L" to L, "R" to R))
@@ -149,55 +150,67 @@ class TouchOverlay(
         Stick(right = true).takeIf { layout.rightStick },
     )
 
-    var controlStyle: Int = 0 // 0=Clasico, 1=PlayStation, 2=Xbox
+    /** 0 = Clasico, 1 = PlayStation, 2 = Xbox, 3 = Wii U / Switch (aplica a todas las consolas). */
+    var controlStyle: Int = 0
     init {
         try {
-            val prefs = context.getSharedPreferences("rainey_controls", android.content.Context.MODE_PRIVATE)
-            controlStyle = prefs.getInt("control_style", 0)
+            controlStyle = context.getSharedPreferences("rainey_controls", android.content.Context.MODE_PRIVATE)
+                .getInt("control_style", 0).coerceIn(0, STYLE_COUNT - 1)
         } catch (e: Exception) { controlStyle = 0 }
     }
-    fun cycleControlStyle() { controlStyle = (controlStyle + 1) % 3 }
-    fun controlStyleName(): String = when (controlStyle) { 1 -> "PlayStation" 2 -> "Translucido" else -> "Clasico" }
 
-    // Etiqueta segun estilo, por tecla (no por letra dibujada)
-    fun styledLabel(faceLabel: String, keyCode: Int): String {
-        if (false) {
-            // Xbox por posicion: X->Y, A->B, B->A, Y->X
-            return when (faceLabel) {
-                "△" -> "Y"
-                "○" -> "B"
-                "X" -> "A"
-                "□" -> "X"
-                else -> faceLabel
-            }
-        }
-        return faceLabel
+    fun controlStyleName(): String = when (controlStyle) {
+        1 -> "PlayStation"
+        2 -> "Xbox"
+        3 -> "Wii U / Switch"
+        else -> "Clásico"
     }
-    fun styledColor(faceLabel: String): Int {
-        if (controlStyle == 2) return android.graphics.Color.rgb(90, 95, 110)
-        if (controlStyle == 1) {
-            return when (faceLabel) {
-                "△" -> android.graphics.Color.rgb(0, 200, 90) // verde
-                "○" -> android.graphics.Color.rgb(230, 50, 50) // rojo
-                "X" -> android.graphics.Color.rgb(60, 120, 255) // azul
-                "□" -> android.graphics.Color.rgb(255, 110, 180) // rosa
-                "A" -> android.graphics.Color.rgb(230, 50, 50) // A = circulo rojo
-                "B" -> android.graphics.Color.rgb(60, 120, 255) // B = cruz azul
-                "Y" -> android.graphics.Color.rgb(0, 200, 90) // Y = triangulo verde
-                else -> android.graphics.Color.WHITE
-            }
-        }
-        if (controlStyle == 2) {
-            return when (faceLabel) {
-                "△" -> android.graphics.Color.rgb(255, 210, 0) // Y amarillo
-                "○" -> android.graphics.Color.rgb(230, 50, 50) // B rojo
-                "X" -> android.graphics.Color.rgb(0, 180, 80) // A verde
-                "□" -> android.graphics.Color.rgb(60, 120, 255) // X azul
-                else -> android.graphics.Color.WHITE
-            }
-        }
-        return android.graphics.Color.WHITE
+
+    fun setStyle(style: Int) {
+        saveControlStyle(style)
+        invalidate()
     }
+
+    /** Rombo de 4 botones (SNES / PS / Dreamcast): se puede traducir por posicion entre estilos. */
+    private val faceDiamond: Boolean = layout.face.size == 4 &&
+        layout.face.map { it.label }.toSet().let { it == setOf("X", "A", "B", "Y") || it == setOf("△", "○", "✕", "□") }
+
+    /** 0 = arriba, 1 = derecha, 2 = abajo, 3 = izquierda. */
+    private fun faceSlot(label: String): Int {
+        val f = layout.face.firstOrNull { it.label == label } ?: return -1
+        return if (kotlin.math.abs(f.y) > kotlin.math.abs(f.x)) (if (f.y < 0) 0 else 2) else (if (f.x > 0) 1 else 3)
+    }
+
+    private fun faceLabel(label: String): String {
+        if (!faceDiamond) return label
+        val s = faceSlot(label)
+        if (s < 0) return label
+        return when (controlStyle) {
+            1 -> listOf("△", "○", "✕", "□")[s]
+            2 -> listOf("Y", "B", "A", "X")[s]
+            else -> label
+        }
+    }
+
+    private fun faceColor(label: String): Int = when (controlStyle) {
+        1 -> when (label) {
+            "△", "Y" -> Color.rgb(0, 200, 90)
+            "○", "A" -> Color.rgb(230, 50, 50)
+            "✕", "B" -> Color.rgb(60, 120, 255)
+            "□", "X" -> Color.rgb(255, 110, 180)
+            else -> Color.WHITE
+        }
+        2 -> when (label) {
+            "Y" -> Color.rgb(255, 205, 0)
+            "B" -> Color.rgb(235, 55, 55)
+            "A" -> Color.rgb(0, 185, 85)
+            "X" -> Color.rgb(50, 120, 255)
+            else -> Color.WHITE
+        }
+        else -> Color.WHITE
+    }
+
+    private fun withAlpha(c: Int, a: Int) = Color.argb(a, Color.red(c), Color.green(c), Color.blue(c))
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(70, 255, 255, 255) }
     private val fillPressed = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(140, 255, 255, 255) }
@@ -209,6 +222,11 @@ class TouchOverlay(
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(220, 255, 255, 255); textAlign = Paint.Align.CENTER; isFakeBoldText = true
     }
+    private val tint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val pathA = android.graphics.Path()
+    private val pathB = android.graphics.Path()
+    private val textColor = Color.argb(220, 255, 255, 255)
 
     // ---- Editor de controles ----
     private var editMode = false
@@ -443,67 +461,167 @@ class TouchOverlay(
 
     override fun onDraw(canvas: Canvas) {
         drawEditor(canvas)
-        // D-pad: ring with four arrows.
-        canvas.drawCircle(dpadCx, dpadCy, dpadR, fill)
-        canvas.drawCircle(dpadCx, dpadCy, dpadR, stroke)
-        text.textSize = dpadR * 0.32f
+        drawDpad(canvas)
+        for (stick in sticks) drawStick(canvas, stick)
+        for (c in controls) drawControl(canvas, c)
+        text.color = textColor
+    }
+
+    private fun ringStyle(color: Int, width: Float): Paint {
+        ring.color = color
+        ring.strokeWidth = width
+        return ring
+    }
+
+    private fun drawDpad(canvas: Canvas) {
         val o = dpadR * 0.62f
         val dirs = listOf(
             Triple("▲", 0f, -o) to KeyEvent.KEYCODE_DPAD_UP, Triple("▼", 0f, o) to KeyEvent.KEYCODE_DPAD_DOWN,
             Triple("◀", -o, 0f) to KeyEvent.KEYCODE_DPAD_LEFT, Triple("▶", o, 0f) to KeyEvent.KEYCODE_DPAD_RIGHT,
         )
-        for ((t, key) in dirs) {
-            val (label, dx, dy) = t
-            if (isPressed(key)) canvas.drawCircle(dpadCx + dx, dpadCy + dy, dpadR * 0.3f, fillPressed)
-            canvas.drawText(label, dpadCx + dx, dpadCy + dy + text.textSize / 3, text)
-        }
-
-        for (stick in sticks) {
-            canvas.drawCircle(stick.cx, stick.cy, stick.r, fill)
-            canvas.drawCircle(stick.cx, stick.cy, stick.r, stroke)
-            val kx = stick.cx + stick.x * stick.r * 0.6f
-            val ky = stick.cy + stick.y * stick.r * 0.6f
-            val knob = if (stick.pointerId >= 0) (if (controlStyle == 2) fillLightPressed else fillPressed) else (if (controlStyle == 2) fillLight else fill)
-            canvas.drawCircle(kx, ky, stick.r * 0.42f, knob)
-            canvas.drawCircle(kx, ky, stick.r * 0.42f, stroke)
-        }
-
-        for (c in controls) {
-            val paint = if (isPressed(c.keyCode)) (if (controlStyle == 2) fillLightPressed else fillPressed) else (if (controlStyle == 2) fillLight else fill)
-            if (c.round) {
-                canvas.drawOval(c.rect, paint)
-                canvas.drawOval(c.rect, stroke)
-            } else {
-                val r = c.rect.height() / 2
-                canvas.drawRoundRect(c.rect, r, r, paint)
-                canvas.drawRoundRect(c.rect, r, r, stroke)
-            }
-            text.textSize = c.rect.height() * if (c.round) 0.45f else 0.42f
-            run {
-                val oldColor = text.color
-                                val isPs = layout.face.any { it.label == "△" }
-                val labelToDraw = if (controlStyle == 1 && !isPs) {
-                    when (c.label) {
-                        "A" -> "○"
-                        "B" -> "X"
-                        "X" -> "□"
-                        "Y" -> "△"
-                        else -> c.label
+        when (controlStyle) {
+            1 -> { // cuatro botones separados, solo borde
+                val s = dpadR * 0.3f
+                for ((t, key) in dirs) {
+                    val (label, dx, dy) = t
+                    val r = RectF(dpadCx + dx * 1.15f - s, dpadCy + dy * 1.15f - s, dpadCx + dx * 1.15f + s, dpadCy + dy * 1.15f + s)
+                    if (isPressed(key)) {
+                        tint.color = Color.argb(110, 255, 255, 255)
+                        canvas.drawRoundRect(r, s * 0.4f, s * 0.4f, tint)
                     }
-                } else if (false) {
-                    when (c.label) {
-                        "△" -> "Y"
-                        "○" -> "B"
-                        "X" -> "A"
-                        "□" -> "X"
-                        else -> c.label
+                    canvas.drawRoundRect(r, s * 0.4f, s * 0.4f, ringStyle(Color.argb(225, 255, 255, 255), 4f))
+                    text.color = Color.WHITE
+                    text.textSize = s * 0.9f
+                    canvas.drawText(label, r.centerX(), r.centerY() + text.textSize / 3, text)
+                }
+            }
+            2 -> { // una sola cruz redondeada con punto central
+                val arm = dpadR * 0.34f
+                val len = dpadR * 0.98f
+                pathA.reset(); pathB.reset()
+                pathA.addRoundRect(RectF(dpadCx - len, dpadCy - arm, dpadCx + len, dpadCy + arm), arm * 0.55f, arm * 0.55f, android.graphics.Path.Direction.CW)
+                pathB.addRoundRect(RectF(dpadCx - arm, dpadCy - len, dpadCx + arm, dpadCy + len), arm * 0.55f, arm * 0.55f, android.graphics.Path.Direction.CW)
+                pathA.op(pathB, android.graphics.Path.Op.UNION)
+                tint.color = Color.argb(95, 255, 255, 255)
+                canvas.drawPath(pathA, tint)
+                canvas.drawPath(pathA, ringStyle(Color.argb(200, 255, 255, 255), 3f))
+                for ((t, key) in dirs) {
+                    val (_, dx, dy) = t
+                    if (isPressed(key)) {
+                        tint.color = Color.argb(150, 255, 255, 255)
+                        canvas.drawCircle(dpadCx + dx * 1.1f, dpadCy + dy * 1.1f, arm * 0.8f, tint)
                     }
-                } else { c.label }
-text.color = styledColor(labelToDraw)
-                canvas.drawText(labelToDraw, c.rect.centerX(), c.rect.centerY() + text.textSize / 3, text)
-                text.color = oldColor
+                }
+                tint.color = Color.argb(150, 255, 255, 255)
+                canvas.drawCircle(dpadCx, dpadCy, arm * 0.38f, tint)
+            }
+            3 -> { // disco oscuro con cuatro flechas
+                tint.color = Color.argb(120, 25, 28, 38)
+                canvas.drawCircle(dpadCx, dpadCy, dpadR, tint)
+                canvas.drawCircle(dpadCx, dpadCy, dpadR, ringStyle(Color.argb(200, 255, 255, 255), 3f))
+                text.color = Color.WHITE
+                text.textSize = dpadR * 0.32f
+                for ((t, key) in dirs) {
+                    val (label, dx, dy) = t
+                    if (isPressed(key)) {
+                        tint.color = Color.argb(150, 255, 255, 255)
+                        canvas.drawCircle(dpadCx + dx, dpadCy + dy, dpadR * 0.3f, tint)
+                    }
+                    canvas.drawText(label, dpadCx + dx, dpadCy + dy + text.textSize / 3, text)
+                }
+            }
+            else -> {
+                canvas.drawCircle(dpadCx, dpadCy, dpadR, fill)
+                canvas.drawCircle(dpadCx, dpadCy, dpadR, stroke)
+                text.textSize = dpadR * 0.32f
+                for ((t, key) in dirs) {
+                    val (label, dx, dy) = t
+                    if (isPressed(key)) canvas.drawCircle(dpadCx + dx, dpadCy + dy, dpadR * 0.3f, fillPressed)
+                    canvas.drawText(label, dpadCx + dx, dpadCy + dy + text.textSize / 3, text)
+                }
             }
         }
+    }
+
+    private fun drawStick(canvas: Canvas, stick: Stick) {
+        val kx = stick.cx + stick.x * stick.r * 0.6f
+        val ky = stick.cy + stick.y * stick.r * 0.6f
+        val active = stick.pointerId >= 0
+        when (controlStyle) {
+            1 -> { // anillos finos
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, ringStyle(Color.argb(210, 255, 255, 255), 3f))
+                if (active) {
+                    tint.color = Color.argb(70, 255, 255, 255)
+                    canvas.drawCircle(kx, ky, stick.r * 0.4f, tint)
+                }
+                canvas.drawCircle(kx, ky, stick.r * 0.4f, ringStyle(Color.argb(230, 255, 255, 255), 3f))
+            }
+            2 -> {
+                tint.color = Color.argb(70, 255, 255, 255)
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, tint)
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, ringStyle(Color.argb(170, 255, 255, 255), 3f))
+                tint.color = Color.argb(if (active) 215 else 150, 255, 255, 255)
+                canvas.drawCircle(kx, ky, stick.r * 0.42f, tint)
+            }
+            3 -> {
+                tint.color = Color.argb(120, 25, 28, 38)
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, tint)
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, ringStyle(Color.argb(190, 255, 255, 255), 3f))
+                tint.color = Color.argb(if (active) 225 else 165, 200, 205, 215)
+                canvas.drawCircle(kx, ky, stick.r * 0.42f, tint)
+            }
+            else -> {
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, fill)
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, stroke)
+                val knob = if (active) fillPressed else fill
+                canvas.drawCircle(kx, ky, stick.r * 0.42f, knob)
+                canvas.drawCircle(kx, ky, stick.r * 0.42f, stroke)
+            }
+        }
+    }
+
+    private fun drawControl(canvas: Canvas, c: Control) {
+        val pressed = isPressed(c.keyCode)
+        val face = c.round
+        var label = if (face) faceLabel(c.label) else c.label
+        if (controlStyle == 3 && !face) {
+            if (label == "SELECT") label = "−"
+            if (label == "START") label = "+"
+        }
+        val accent = if (face) faceColor(label) else Color.WHITE
+        val rr = c.rect.height() / 2
+        var textCol = Color.WHITE
+        fun shape(p: Paint) {
+            if (face) canvas.drawOval(c.rect, p) else canvas.drawRoundRect(c.rect, rr, rr, p)
+        }
+        when (controlStyle) {
+            1 -> { // anillo hueco de color, letra de color (pildoras blancas)
+                if (pressed) {
+                    tint.color = withAlpha(accent, 110)
+                    shape(tint)
+                }
+                shape(ringStyle(withAlpha(accent, 235), 4f))
+                textCol = accent
+            }
+            2 -> { // circulo grande relleno teñido, borde claro, letra blanca
+                tint.color = if (face) withAlpha(accent, if (pressed) 200 else 120) else Color.argb(if (pressed) 150 else 85, 255, 255, 255)
+                shape(tint)
+                shape(ringStyle(Color.argb(210, 255, 255, 255), 3f))
+            }
+            3 -> { // oscuro translucido con borde claro
+                tint.color = Color.argb(if (pressed) 200 else 120, 25, 28, 38)
+                shape(tint)
+                shape(ringStyle(Color.argb(200, 255, 255, 255), 3f))
+            }
+            else -> {
+                val paint = if (pressed) fillPressed else fill
+                shape(paint)
+                shape(stroke)
+            }
+        }
+        text.color = textCol
+        text.textSize = c.rect.height() * if (face) 0.45f else 0.42f
+        canvas.drawText(label, c.rect.centerX(), c.rect.centerY() + text.textSize / 3, text)
     }
 
     private fun isPressed(key: Int) = (pressedKeys[key] ?: 0) > 0
