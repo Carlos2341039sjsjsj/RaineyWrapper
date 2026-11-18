@@ -57,3 +57,4 @@ bin/
 *.jpg
 *.jpeg
 *.code-workspace
+player-template/build.log
