@@ -112,6 +112,7 @@ class GameActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        installCrashLog()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         preferSixtyHz()
         container = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
@@ -123,6 +124,26 @@ class GameActivity : ComponentActivity() {
         PpssppMultiplayer.customIp = prefs().getString(PREF_MP_IP, null)
         revertFailedBackendTrial()
         menu = GameMenu(this, config.title).apply { setItems(menuItems()) }
+    }
+
+    /** Writes uncaught Java/Kotlin errors to Download/RaineyWrapper-crash.txt (falls back to the app's own folder). */
+    private fun installCrashLog() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val text = "== " + java.util.Date() + " " + packageName + "\n" + Log.getStackTraceString(e) + "\n"
+                val dirs = listOfNotNull(File(Environment.getExternalStorageDirectory(), "Download"), getExternalFilesDir(null))
+                for (dir in dirs) {
+                    try {
+                        File(dir, "RaineyWrapper-crash.txt").appendText(text)
+                        break
+                    } catch (_: Exception) {
+                    }
+                }
+            } catch (_: Throwable) {
+            }
+            previous?.uncaughtException(t, e)
+        }
     }
 
     override fun onResume() {
