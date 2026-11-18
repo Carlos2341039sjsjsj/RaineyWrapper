@@ -30,7 +30,7 @@ object InternalResolution {
         "dreamcast" -> listOf("640x480", "1280x960", "1920x1440").mapIndexed { i, res ->
             Level(if (i == 0) "1x (native)" else "${i + 1}x", Variable("reicast_internal_resolution", res))
         }
-        "psp" -> listOf("480x272", "960x544", "1440x816").mapIndexed { i, res ->
+        "psp" -> listOf("480x272", "960x544", "1440x816", "1920x1088").mapIndexed { i, res ->
             Level(if (i == 0) "1x (native)" else "${i + 1}x", Variable("ppsspp_internal_resolution", res))
         }
         // Mupen64Plus-Next's default 640x480 is its "native" level (N64 games are mostly 320x240).

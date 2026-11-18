@@ -13,6 +13,14 @@ object PpssppMultiplayer {
         ExtraLevel("Servidor", listOf(
             Variable("ppsspp_enable_wlan", "enabled"),
             Variable("ppsspp_change_pro_ad_hoc_server_address", "socom.cc"))),
+        ExtraLevel("Anfitrion LAN", listOf(
+            Variable("ppsspp_enable_wlan", "enabled"),
+            Variable("ppsspp_enable_builtin_pro_ad_hoc_server", "enabled"),
+            Variable("ppsspp_change_pro_ad_hoc_server_address", "localhost"))),
+        ExtraLevel("Servidor + UPnP", listOf(
+            Variable("ppsspp_enable_wlan", "enabled"),
+            Variable("ppsspp_enable_upnp", "enabled"),
+            Variable("ppsspp_change_pro_ad_hoc_server_address", "socom.cc"))),
     )
 }
 
