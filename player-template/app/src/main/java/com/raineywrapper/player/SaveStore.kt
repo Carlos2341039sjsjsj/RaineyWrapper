@@ -113,8 +113,12 @@ class SaveStore(context: Context) {
         return count
     }
 
-    /** Extracts a mod zip (texture pack, cheats) into the folder the core reads for [system]. */
-    fun importMod(name: String, input: java.io.InputStream, system: String): String {
+    /**
+     * Extracts a mod zip (texture pack, cheats) into the folder the core reads for [system].
+     * [gameKey] is the game's own ID (see GameId); when the zip's folders don't match it, the pack is
+     * placed under the game's ID instead.
+     */
+    fun importMod(name: String, input: java.io.InputStream, system: String, gameKey: String?): String {
         if (!name.lowercase().endsWith(".zip")) return "El mod tiene que ser un .zip"
         val base = when (system) {
             "psp" -> File(savesDir, "PSP")
@@ -131,7 +135,7 @@ class SaveStore(context: Context) {
             while (entry != null) {
                 if (!entry.isDirectory) {
                     val path = entry.name.replace('\\', '/').removePrefix("/")
-                    val out = modTarget(system, path)?.let { File(base, it) }
+                    val out = modTarget(system, path, gameKey)?.let { File(base, it) }
                     // Zip-slip guard: never write outside the core's folder.
                     if (out != null && out.canonicalPath.startsWith(baseCanon + File.separator)) {
                         out.parentFile?.mkdirs()
@@ -151,27 +155,44 @@ class SaveStore(context: Context) {
         }
     }
 
-    /** Where a zip entry goes, relative to the core's folder; null when the layout isn't recognised. */
-    private fun modTarget(system: String, path: String): String? {
-        val first = path.substringBefore('/')
-        val hasDir = '/' in path
+    /** Where a zip entry goes, relative to the core's folder; null when it can't be placed. */
+    private fun modTarget(system: String, rawPath: String, key: String?): String? {
+        var segs = rawPath.split('/').filter { it.isNotEmpty() }
+        if (segs.isEmpty()) return null
+        val known = when (system) {
+            "psp" -> setOf("TEXTURES", "SAVEDATA", "GAME", "Cheats")
+            "n64" -> setOf("hires_texture", "cache")
+            else -> setOf("Load", "GameSettings", "Config")
+        }
+        // One wrapper folder ("MyPack/TEXTURES/...") is dropped when what follows is recognised.
+        if (segs.size > 2 && segs[0] !in known && segs[1] in known) segs = segs.drop(1)
+        val first = segs[0]
+        val hasDir = segs.size > 1
+        val path = segs.joinToString("/")
+        val rest = segs.drop(1).joinToString("/")
+        if (hasDir && first in known) return path
         val gameId = Regex("[A-Z0-9]{6}([A-Z0-9]{2})?")
         return when (system) {
             "psp" -> when {
-                first in setOf("TEXTURES", "SAVEDATA", "GAME", "Cheats") -> path
                 hasDir && Regex("[A-Z]{4}[0-9]{5}").matches(first) -> "TEXTURES/$path"
+                key != null && hasDir -> "TEXTURES/$key/$rest"
+                key != null -> "TEXTURES/$key/$path"
                 else -> null
             }
             "n64" -> when {
-                first == "hires_texture" || first == "cache" -> path
                 !hasDir && (path.endsWith(".hts", true) || path.endsWith(".htc", true)) -> "cache/$path"
+                key != null && first.equals(key, true) && hasDir -> "hires_texture/$path"
+                key != null && hasDir -> "hires_texture/$key/$rest"
+                key != null -> "hires_texture/$key/$path"
                 hasDir -> "hires_texture/$path"
                 else -> null
             }
             else -> when {
-                first == "Load" || first == "GameSettings" || first == "Config" -> path
-                hasDir && gameId.matches(first) -> "Load/Textures/$path"
                 !hasDir && path.endsWith(".ini", true) && gameId.matches(path.dropLast(4)) -> "GameSettings/$path"
+                hasDir && gameId.matches(first) -> "Load/Textures/$path"
+                !hasDir && path.endsWith(".ini", true) && key != null -> "GameSettings/$key.ini"
+                key != null && hasDir -> "Load/Textures/$key/$rest"
+                key != null -> "Load/Textures/$key/$path"
                 else -> null
             }
         }

@@ -53,6 +53,13 @@ object PpssppGraphics {
 
     fun levels() = listOf(
         ExtraLevel("Normal", emptyList()),
+        ExtraLevel("Rendimiento", listOf(
+            on("ppsspp_auto_frameskip"),
+            on("ppsspp_skip_gpu_readbacks"))),
+        ExtraLevel("Rendimiento + ISO en RAM", listOf(
+            on("ppsspp_auto_frameskip"),
+            on("ppsspp_skip_gpu_readbacks"),
+            on("ppsspp_cache_iso"))),
         ExtraLevel("Compatibilidad", listOf(on("ppsspp_skip_gpu_readbacks"))),
         ExtraLevel("Sin efectos", listOf(
             on("ppsspp_skip_buffer_effects"),

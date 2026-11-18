@@ -87,6 +87,7 @@ class GameActivity : ComponentActivity() {
     private var startedMultiplayer = 0
     private var startedDolphin = 1
     private var startedPspGfx = 0
+    private var currentRom: File? = null
     private var startedWiiController = WiiController.NUNCHUK
 
     /** Physical Start/Select currently held, for the Start+Select menu shortcut. */
@@ -100,6 +101,9 @@ class GameActivity : ComponentActivity() {
     }
     private val pickModZip = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importModZip(uri)
+    }
+    private val pickPatch = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) applyPatch(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,6 +170,7 @@ class GameActivity : ComponentActivity() {
                 saves.applyPendingImports()
                 saves.readSram()
             }
+            currentRom = rom
             startEmulator(modFile() ?: rom, sram)
             offerMoveGame()
         }
@@ -453,6 +458,10 @@ class GameActivity : ComponentActivity() {
             setTouchControls(!touchControlsEnabled())
             menu.refresh()
         },
+        GameMenu.Item({ "Patch game (IPS/BPS/PPF)" }, { gameRunning && config.external.isEmpty() && currentRom != null }) {
+            closeMenu()
+            pickPatch.launch(arrayOf("*/*"))
+        },
         GameMenu.Item({ "Import mod (zip)" }, { gameRunning && config.external.isEmpty() }) {
             closeMenu()
             pickModZip.launch(arrayOf("*/*"))
@@ -635,7 +644,9 @@ class GameActivity : ComponentActivity() {
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 try {
-                    contentResolver.openInputStream(uri)!!.use { saves.importMod(name, it, config.system) }
+                    val key = (modFile() ?: currentRom)?.let { GameId.detect(it, config.system) }
+                    val msg = contentResolver.openInputStream(uri)!!.use { saves.importMod(name, it, config.system, key) }
+                    if (key != null) "$msg (juego: $key)" else "$msg (no pude leer el ID del juego)"
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to import mod zip", e)
                     "Error: ${e.message}"
@@ -645,6 +656,53 @@ class GameActivity : ComponentActivity() {
             if (result.startsWith("OK")) {
                 prefs().edit().putBoolean(PREF_MOD_TEX, true).commit()
                 restartGame()
+            }
+        }
+    }
+
+    /** Applies an IPS/BPS/PPF patch to the original game file and plays the result. */
+    private fun applyPatch(uri: Uri) {
+        val base = currentRom
+        if (base == null || !base.exists()) {
+            Toast.makeText(this, "No encuentro el juego base para parchear", Toast.LENGTH_LONG).show()
+            return
+        }
+        val free = StatFs(filesDir.absolutePath).availableBytes
+        if (free < base.length() + (50L shl 20)) {
+            Toast.makeText(this, "No hay espacio libre suficiente para el juego parcheado", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "Aplicando ${displayName(uri)}... puede tardar", Toast.LENGTH_LONG).show()
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val dir = File(filesDir, "mod").apply { mkdirs() }
+                val tmp = File(dir, "patch.tmp")
+                try {
+                    val size = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+                    if (size > (200L shl 20)) return@withContext "El parche es demasiado grande"
+                    val patch = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                    val res = RomPatcher.apply(base, patch, tmp)
+                    if (res != "OK") {
+                        tmp.delete()
+                        return@withContext res
+                    }
+                    dir.listFiles()?.forEach { if (it != tmp) it.delete() }
+                    val ext = base.extension
+                    val target = File(dir, base.nameWithoutExtension + " (patched)" + if (ext.isEmpty()) "" else ".$ext")
+                    tmp.renameTo(target)
+                    prefs().edit().putString(PREF_MOD_PATH, target.absolutePath).commit()
+                    "OK"
+                } catch (e: Exception) {
+                    tmp.delete()
+                    Log.e(TAG, "Failed to apply patch", e)
+                    "Error: ${e.message}"
+                }
+            }
+            if (result == "OK") {
+                Toast.makeText(this@GameActivity, "Parche aplicado. Reiniciando...", Toast.LENGTH_LONG).show()
+                restartGame()
+            } else {
+                Toast.makeText(this@GameActivity, result, Toast.LENGTH_LONG).show()
             }
         }
     }
