@@ -815,7 +815,7 @@ class GameActivity : ComponentActivity() {
         return prefs().getInt(PREF_MULTIPLAYER, 0).coerceIn(0, PpssppMultiplayer.levels().size - 1)
     }
     private fun multiplayerLabel(): String {
-        return listOf("Apagado", "Localhost", "Servidor")[multiplayerLevel()]
+        return PpssppMultiplayer.levels()[multiplayerLevel()].label
     }
     private fun dolphinLevel(): Int {
         return prefs().getInt(PREF_DOLPHIN_OPT, 1).coerceIn(0, 2)
