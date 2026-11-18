@@ -21,7 +21,25 @@ object PpssppMultiplayer {
             Variable("ppsspp_enable_wlan", "enabled"),
             Variable("ppsspp_enable_upnp", "enabled"),
             Variable("ppsspp_change_pro_ad_hoc_server_address", "socom.cc"))),
+        ExtraLevel("IP propia", ipVariables()),
     )
+
+    /** IP of the host phone, typed by the person ("192.168.1.5"); null until set. */
+    var customIp: String? = null
+
+    // The core takes the server IP as 12 digit options: ...address01 .. ...address12.
+    private fun ipVariables(): List<Variable> {
+        val parts = customIp?.split('.')
+        if (parts == null || parts.size != 4) return emptyList()
+        val digits = parts.joinToString("") { it.padStart(3, '0') }
+        if (digits.length != 12 || !digits.all { it.isDigit() }) return emptyList()
+        return listOf(
+            Variable("ppsspp_enable_wlan", "enabled"),
+            Variable("ppsspp_change_pro_ad_hoc_server_address", "IP address"),
+        ) + digits.mapIndexed { i, c ->
+            Variable("ppsspp_pro_ad_hoc_server_address" + (i + 1).toString().padStart(2, '0'), c.toString())
+        }
+    }
 }
 
 // Claves y valores comprobados con `strings` sobre libdolphin_libretro_android.so:

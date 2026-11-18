@@ -64,6 +64,9 @@ class GameActivity : ComponentActivity() {
         private const val PREF_MOVED_FROM = "moved_from"
         private const val PREF_ASKED_MOVE = "asked_move"
         private const val PREF_MOD_TEX = "mod_textures"
+        private const val PREF_PSP_BACKEND = "psp_backend"
+        private const val PREF_BACKEND_TRIAL = "psp_backend_trial"
+        private const val PREF_MP_IP = "mp_server_ip"
     }
 
     private lateinit var container: FrameLayout
@@ -88,6 +91,7 @@ class GameActivity : ComponentActivity() {
     private var startedDolphin = 1
     private var startedPspGfx = 0
     private var currentRom: File? = null
+    private var startedPspBackend = 0
     private var startedWiiController = WiiController.NUNCHUK
 
     /** Physical Start/Select currently held, for the Start+Select menu shortcut. */
@@ -116,6 +120,8 @@ class GameActivity : ComponentActivity() {
 
         config = GameConfig.load(this)
         saves = SaveStore(this)
+        PpssppMultiplayer.customIp = prefs().getString(PREF_MP_IP, null)
+        revertFailedBackendTrial()
         menu = GameMenu(this, config.title).apply { setItems(menuItems()) }
     }
 
@@ -171,6 +177,7 @@ class GameActivity : ComponentActivity() {
                 saves.readSram()
             }
             currentRom = rom
+            markBackendTrial()
             startEmulator(modFile() ?: rom, sram)
             offerMoveGame()
         }
@@ -190,9 +197,10 @@ class GameActivity : ComponentActivity() {
         startedMultiplayer = multiplayerLevel()
         startedDolphin = dolphinLevel()
         startedPspGfx = pspGfxLevel()
+        startedPspBackend = pspBackend()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + modTextureVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         val view = GLRetroView(this, data)
@@ -311,6 +319,8 @@ class GameActivity : ComponentActivity() {
     )
 
     override fun onPause() {
+        // A normal pause means the chosen backend didn't crash the start.
+        prefs().edit().putBoolean(PREF_BACKEND_TRIAL, false).apply()
         // The emulation thread is already paused at this point (lifecycle observers
         // see ON_PAUSE first), so read SRAM directly instead of queueing onto it.
         if (gameRunning) retroView?.let { saves.writeSram(it.serializeSRAM(false)) }
@@ -420,12 +430,20 @@ class GameActivity : ComponentActivity() {
             menu.refresh()
         },
         GameMenu.Item({ "Multiplayer: " + multiplayerLabel() }) {
-            prefs().edit().putInt(PREF_MULTIPLAYER, (multiplayerLevel() + 1) % 3).apply()
+            prefs().edit().putInt(PREF_MULTIPLAYER, (multiplayerLevel() + 1) % PpssppMultiplayer.levels().size).apply()
             menu.refresh()
         }.takeIf { config.system == "psp" },
         GameMenu.Item({ "PSP graphics: " + (PpssppGraphics.levels().getOrNull(pspGfxLevel())?.label ?: "-") }) {
             prefs().edit().putInt(PREF_PSP_GFX, (pspGfxLevel() + 1) % PpssppGraphics.levels().size).apply()
             menu.refresh()
+        }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "PSP backend: " + pspBackendLabel() }) {
+            prefs().edit().putInt(PREF_PSP_BACKEND, (pspBackend() + 1) % 3).apply()
+            menu.refresh()
+        }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Multiplayer IP: " + (PpssppMultiplayer.customIp ?: "sin definir") }) {
+            closeMenu()
+            askServerIp()
         }.takeIf { config.system == "psp" },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
@@ -445,6 +463,7 @@ class GameActivity : ComponentActivity() {
                 multiplayerLevel() != startedMultiplayer -> "Restart game to apply multiplayer"
                 dolphinLevel() != startedDolphin -> "Restart game to apply optimize"
                 pspGfxLevel() != startedPspGfx -> "Restart game to apply graphics"
+                pspBackend() != startedPspBackend -> "Restart game to apply backend"
                 wiiController() != startedWiiController -> "Restart game to apply controller"
                 else -> "Restart game"
             } }, { gameRunning }) { restartGame() },
@@ -707,6 +726,66 @@ class GameActivity : ComponentActivity() {
         }
     }
 
+    /** 0 = core default, 1 = OpenGL, 2 = Vulkan. */
+    private fun pspBackend() = prefs().getInt(PREF_PSP_BACKEND, 0).coerceIn(0, 2)
+
+    private fun pspBackendLabel() = when (pspBackend()) {
+        1 -> "OpenGL"
+        2 -> "Vulkan"
+        else -> "Auto"
+    }
+
+    private fun pspBackendVariables(): List<Variable> {
+        if (config.system != "psp") return emptyList()
+        return when (startedPspBackend) {
+            1 -> listOf(Variable("ppsspp_backend", "opengl"))
+            2 -> listOf(Variable("ppsspp_backend", "vulkan"))
+            else -> emptyList()
+        }
+    }
+
+    /** While a non-default backend is starting, remember it; if the app dies first, undo it next launch. */
+    private fun markBackendTrial() {
+        if (config.system != "psp" || pspBackend() == 0) return
+        prefs().edit().putBoolean(PREF_BACKEND_TRIAL, true).commit()
+        container.postDelayed({ prefs().edit().putBoolean(PREF_BACKEND_TRIAL, false).apply() }, 20_000L)
+    }
+
+    private fun revertFailedBackendTrial() {
+        if (!prefs().getBoolean(PREF_BACKEND_TRIAL, false)) return
+        prefs().edit().putBoolean(PREF_BACKEND_TRIAL, false).putInt(PREF_PSP_BACKEND, 0).commit()
+        Toast.makeText(this, "El motor grafico elegido no arranco. Volvi a Auto.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun askServerIp() {
+        val input = android.widget.EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_PHONE
+            hint = "192.168.1.5"
+            setText(PpssppMultiplayer.customIp ?: "")
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("IP del anfitrion")
+            .setMessage("IP del telefono que hace de servidor (el que usa Multiplayer: Localhost). Vacio para quitarla.")
+            .setView(input)
+            .setPositiveButton("Guardar") { _, _ ->
+                val text = input.text.toString().trim()
+                val octets = Regex("(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})").matchEntire(text)
+                    ?.groupValues?.drop(1)?.map { it.toInt() }
+                if (text.isNotEmpty() && (octets == null || octets.any { it > 255 })) {
+                    Toast.makeText(this, "IP no valida", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                PpssppMultiplayer.customIp = text.ifEmpty { null }
+                prefs().edit().putString(PREF_MP_IP, text.ifEmpty { null }).apply()
+                menu.refresh()
+                if (text.isNotEmpty()) {
+                    Toast.makeText(this, "Ahora elegi Multiplayer: IP propia y reinicia", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
     private fun importSave(uri: Uri) {
         val name = displayName(uri)
         lifecycleScope.launch {
@@ -733,7 +812,7 @@ class GameActivity : ComponentActivity() {
             ?: WiiController.NUNCHUK
 
     private fun multiplayerLevel(): Int {
-        return prefs().getInt(PREF_MULTIPLAYER, 0).coerceIn(0, 2)
+        return prefs().getInt(PREF_MULTIPLAYER, 0).coerceIn(0, PpssppMultiplayer.levels().size - 1)
     }
     private fun multiplayerLabel(): String {
         return listOf("Apagado", "Localhost", "Servidor")[multiplayerLevel()]
