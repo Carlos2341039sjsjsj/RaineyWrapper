@@ -63,6 +63,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_MOVED_PATH = "moved_path"
         private const val PREF_MOVED_FROM = "moved_from"
         private const val PREF_ASKED_MOVE = "asked_move"
+        private const val PREF_MOD_TEX = "mod_textures"
     }
 
     private lateinit var container: FrameLayout
@@ -96,6 +97,9 @@ class GameActivity : ComponentActivity() {
     }
     private val pickSave = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importSave(uri)
+    }
+    private val pickModZip = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importModZip(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -183,7 +187,7 @@ class GameActivity : ComponentActivity() {
         startedPspGfx = pspGfxLevel()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + modTextureVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         val view = GLRetroView(this, data)
@@ -449,6 +453,10 @@ class GameActivity : ComponentActivity() {
             setTouchControls(!touchControlsEnabled())
             menu.refresh()
         },
+        GameMenu.Item({ "Import mod (zip)" }, { gameRunning && config.external.isEmpty() }) {
+            closeMenu()
+            pickModZip.launch(arrayOf("*/*"))
+        },
         GameMenu.Item({ "Import save" }, { gameRunning }) {
             closeMenu()
             pickSave.launch(arrayOf("*/*"))
@@ -599,6 +607,46 @@ class GameActivity : ComponentActivity() {
             .setPositiveButton("Mover y borrar ISO") { _, _ -> moveGameIntoApp() }
             .setNegativeButton("Ahora no", null)
             .show()
+    }
+
+    /** Core options that make a core use an imported mod (texture packs, cheats). */
+    private fun modTextureVariables(): List<Variable> {
+        if (!prefs().getBoolean(PREF_MOD_TEX, false)) return emptyList()
+        return when (config.system) {
+            "psp" -> listOf(
+                Variable("ppsspp_texture_replacement", "enabled"),
+                Variable("ppsspp_cheats", "enabled"),
+            )
+            "n64" -> listOf(
+                Variable("mupen64plus-txHiresEnable", "True"),
+                Variable("mupen64plus-txHiresFullAlphaChannel", "True"),
+            )
+            "gamecube", "wii", "gc" -> listOf(
+                Variable("dolphin_load_custom_textures", "enabled"),
+                Variable("dolphin_cheats_enabled", "enabled"),
+            )
+            else -> emptyList()
+        }
+    }
+
+    private fun importModZip(uri: Uri) {
+        val name = displayName(uri)
+        Toast.makeText(this, "Importando $name... puede tardar", Toast.LENGTH_LONG).show()
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    contentResolver.openInputStream(uri)!!.use { saves.importMod(name, it, config.system) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to import mod zip", e)
+                    "Error: ${e.message}"
+                }
+            }
+            Toast.makeText(this@GameActivity, result, Toast.LENGTH_LONG).show()
+            if (result.startsWith("OK")) {
+                prefs().edit().putBoolean(PREF_MOD_TEX, true).commit()
+                restartGame()
+            }
+        }
     }
 
     private fun importSave(uri: Uri) {

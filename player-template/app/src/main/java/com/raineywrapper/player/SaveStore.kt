@@ -112,4 +112,68 @@ class SaveStore(context: Context) {
         }
         return count
     }
+
+    /** Extracts a mod zip (texture pack, cheats) into the folder the core reads for [system]. */
+    fun importMod(name: String, input: java.io.InputStream, system: String): String {
+        if (!name.lowercase().endsWith(".zip")) return "El mod tiene que ser un .zip"
+        val base = when (system) {
+            "psp" -> File(savesDir, "PSP")
+            "n64" -> File(systemDir, "Mupen64plus")
+            "gamecube", "wii", "gc" -> File(savesDir, "dolphin-emu/User")
+            else -> return "Los mods en zip todavia no estan soportados para este sistema"
+        }
+        base.mkdirs()
+        val baseCanon = base.canonicalPath
+        var count = 0
+        var skipped = 0
+        java.util.zip.ZipInputStream(input).use { zip ->
+            var entry = zip.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory) {
+                    val path = entry.name.replace('\\', '/').removePrefix("/")
+                    val out = modTarget(system, path)?.let { File(base, it) }
+                    // Zip-slip guard: never write outside the core's folder.
+                    if (out != null && out.canonicalPath.startsWith(baseCanon + File.separator)) {
+                        out.parentFile?.mkdirs()
+                        out.outputStream().use { zip.copyTo(it) }
+                        count++
+                    } else {
+                        skipped++
+                    }
+                }
+                entry = zip.nextEntry
+            }
+        }
+        return when {
+            count == 0 -> "No se reconocio la estructura del zip ($skipped archivos omitidos)"
+            skipped > 0 -> "OK: $count archivos importados, $skipped omitidos"
+            else -> "OK: $count archivos importados"
+        }
+    }
+
+    /** Where a zip entry goes, relative to the core's folder; null when the layout isn't recognised. */
+    private fun modTarget(system: String, path: String): String? {
+        val first = path.substringBefore('/')
+        val hasDir = '/' in path
+        val gameId = Regex("[A-Z0-9]{6}([A-Z0-9]{2})?")
+        return when (system) {
+            "psp" -> when {
+                first in setOf("TEXTURES", "SAVEDATA", "GAME", "Cheats") -> path
+                hasDir && Regex("[A-Z]{4}[0-9]{5}").matches(first) -> "TEXTURES/$path"
+                else -> null
+            }
+            "n64" -> when {
+                first == "hires_texture" || first == "cache" -> path
+                !hasDir && (path.endsWith(".hts", true) || path.endsWith(".htc", true)) -> "cache/$path"
+                hasDir -> "hires_texture/$path"
+                else -> null
+            }
+            else -> when {
+                first == "Load" || first == "GameSettings" || first == "Config" -> path
+                hasDir && gameId.matches(first) -> "Load/Textures/$path"
+                !hasDir && path.endsWith(".ini", true) && gameId.matches(path.dropLast(4)) -> "GameSettings/$path"
+                else -> null
+            }
+        }
+    }
 }
