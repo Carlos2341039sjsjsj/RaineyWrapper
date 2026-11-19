@@ -36,6 +36,12 @@ object PpssppMultiplayer {
             Variable("ppsspp_enable_upnp", "enabled"),
             Variable("ppsspp_change_pro_ad_hoc_server_address", "socom.cc"))),
         ExtraLevel("IP propia", ipVariables()),
+        // Anfitrion para VPN (ZeroTier): servidor interno + la IP propia escrita en "Multiplayer IP".
+        // Sin IP definida cae a localhost, igual que "Anfitrion LAN".
+        ExtraLevel("Anfitrion + IP propia", listOf(Variable("ppsspp_enable_builtin_pro_ad_hoc_server", "enabled")) +
+            ipVariables().ifEmpty { listOf(
+                Variable("ppsspp_enable_wlan", "enabled"),
+                Variable("ppsspp_change_pro_ad_hoc_server_address", "localhost")) }),
     )
 
     /** IP of the host phone, typed by the person ("192.168.1.5"); null until set. */
