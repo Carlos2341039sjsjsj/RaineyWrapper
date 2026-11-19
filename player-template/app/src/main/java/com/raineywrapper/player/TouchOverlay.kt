@@ -56,7 +56,7 @@ class TouchOverlay(
         private const val L2 = KeyEvent.KEYCODE_BUTTON_L2
         private const val R2 = KeyEvent.KEYCODE_BUTTON_R2
         private const val MENU = -1
-        const val STYLE_COUNT = 4 // Clasico, PlayStation, Xbox, Wii U / Switch
+        const val STYLE_COUNT = 5 // Clasico, PlayStation, Xbox, Wii U / Switch
 
         fun layoutFor(system: String, wiiController: WiiController = WiiController.NUNCHUK): Layout = when (system) {
             "gba" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), listOf("L" to L, "R" to R))
@@ -163,6 +163,7 @@ class TouchOverlay(
         1 -> "PlayStation"
         2 -> "Xbox"
         3 -> "Wii U / Switch"
+        4 -> "PS2 (DualShock)"
         else -> "Clásico"
     }
 
@@ -186,14 +187,14 @@ class TouchOverlay(
         val s = faceSlot(label)
         if (s < 0) return label
         return when (controlStyle) {
-            1 -> listOf("△", "○", "✕", "□")[s]
+            1, 4 -> listOf("△", "○", "✕", "□")[s]
             2 -> listOf("Y", "B", "A", "X")[s]
             else -> label
         }
     }
 
     private fun faceColor(label: String): Int = when (controlStyle) {
-        1 -> when (label) {
+        1, 4 -> when (label) {
             "△", "Y" -> Color.rgb(0, 200, 90)
             "○", "A" -> Color.rgb(230, 50, 50)
             "✕", "B" -> Color.rgb(60, 120, 255)
@@ -223,6 +224,7 @@ class TouchOverlay(
         color = Color.argb(220, 255, 255, 255); textAlign = Paint.Align.CENTER; isFakeBoldText = true
     }
     private val tint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val gradPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val pathA = android.graphics.Path()
     private val pathB = android.graphics.Path()
@@ -518,6 +520,30 @@ class TouchOverlay(
                 tint.color = Color.argb(150, 255, 255, 255)
                 canvas.drawCircle(dpadCx, dpadCy, arm * 0.38f, tint)
             }
+            4 -> { // PS2: una cruz oscura con relieve
+                val arm = dpadR * 0.36f
+                val len = dpadR * 0.98f
+                pathA.reset(); pathB.reset()
+                pathA.addRoundRect(RectF(dpadCx - len, dpadCy - arm, dpadCx + len, dpadCy + arm), arm * 0.3f, arm * 0.3f, android.graphics.Path.Direction.CW)
+                pathB.addRoundRect(RectF(dpadCx - arm, dpadCy - len, dpadCx + arm, dpadCy + len), arm * 0.3f, arm * 0.3f, android.graphics.Path.Direction.CW)
+                pathA.op(pathB, android.graphics.Path.Op.UNION)
+                gradPaint.shader = android.graphics.LinearGradient(
+                    dpadCx - len, dpadCy - len, dpadCx + len, dpadCy + len,
+                    Color.rgb(96, 100, 110), Color.rgb(22, 24, 30), android.graphics.Shader.TileMode.CLAMP)
+                canvas.drawPath(pathA, gradPaint)
+                gradPaint.shader = null
+                canvas.drawPath(pathA, ringStyle(Color.argb(200, 185, 190, 200), 3f))
+                text.textSize = dpadR * 0.28f
+                for ((t, key) in dirs) {
+                    val (label, dx, dy) = t
+                    if (isPressed(key)) {
+                        tint.color = Color.argb(120, 255, 255, 255)
+                        canvas.drawCircle(dpadCx + dx * 1.1f, dpadCy + dy * 1.1f, arm * 0.7f, tint)
+                    }
+                    text.color = Color.argb(230, 205, 210, 220)
+                    canvas.drawText(label, dpadCx + dx * 1.1f, dpadCy + dy * 1.1f + text.textSize / 3, text)
+                }
+            }
             3 -> { // disco oscuro con cuatro flechas
                 tint.color = Color.argb(120, 25, 28, 38)
                 canvas.drawCircle(dpadCx, dpadCy, dpadR, tint)
@@ -566,6 +592,21 @@ class TouchOverlay(
                 tint.color = Color.argb(if (active) 215 else 150, 255, 255, 255)
                 canvas.drawCircle(kx, ky, stick.r * 0.42f, tint)
             }
+            4 -> { // PS2: pozo oscuro con tapa de relieve
+                tint.color = Color.argb(150, 12, 13, 17)
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, tint)
+                canvas.drawCircle(stick.cx, stick.cy, stick.r, ringStyle(Color.argb(190, 185, 190, 200), 3f))
+                canvas.drawCircle(stick.cx, stick.cy, stick.r * 0.78f, ringStyle(Color.argb(70, 185, 190, 200), 2f))
+                val kr = stick.r * 0.44f
+                gradPaint.shader = android.graphics.RadialGradient(
+                    kx - kr * 0.3f, ky - kr * 0.35f, kr * 1.5f,
+                    if (active) Color.rgb(150, 154, 165) else Color.rgb(104, 108, 118), Color.rgb(28, 30, 36),
+                    android.graphics.Shader.TileMode.CLAMP)
+                canvas.drawCircle(kx, ky, kr, gradPaint)
+                gradPaint.shader = null
+                canvas.drawCircle(kx, ky, kr, ringStyle(Color.argb(210, 190, 195, 205), 3f))
+                canvas.drawCircle(kx, ky, kr * 0.62f, ringStyle(Color.argb(90, 190, 195, 205), 2f))
+            }
             3 -> {
                 tint.color = Color.argb(120, 25, 28, 38)
                 canvas.drawCircle(stick.cx, stick.cy, stick.r, tint)
@@ -610,6 +651,22 @@ class TouchOverlay(
                 tint.color = if (face) withAlpha(accent, if (pressed) 200 else 120) else Color.argb(if (pressed) 150 else 85, 255, 255, 255)
                 shape(tint)
                 shape(ringStyle(Color.argb(210, 255, 255, 255), 3f))
+            }
+            4 -> { // PS2: boton oscuro con relieve; simbolo de color en los de cara
+                val light = if (pressed) Color.rgb(150, 154, 165) else Color.rgb(98, 102, 112)
+                val dark = Color.rgb(24, 26, 32)
+                gradPaint.shader = if (face) {
+                    val r = c.rect.height() / 2
+                    android.graphics.RadialGradient(c.rect.centerX() - r * 0.3f, c.rect.centerY() - r * 0.35f, r * 1.4f,
+                        light, dark, android.graphics.Shader.TileMode.CLAMP)
+                } else {
+                    android.graphics.LinearGradient(c.rect.left, c.rect.top, c.rect.left, c.rect.bottom,
+                        light, dark, android.graphics.Shader.TileMode.CLAMP)
+                }
+                shape(gradPaint)
+                gradPaint.shader = null
+                shape(ringStyle(Color.argb(205, 190, 195, 205), 3f))
+                textCol = accent
             }
             3 -> { // oscuro translucido con borde claro
                 tint.color = Color.argb(if (pressed) 200 else 120, 25, 28, 38)
