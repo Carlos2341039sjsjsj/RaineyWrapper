@@ -72,6 +72,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_MP_MAC = "mp_mac"
         private const val PREF_LITE = "lite_mode"
         private const val PREF_LITE_ASKED = "lite_asked"
+        private const val PREF_DS_LAND = "ds_landscape"
     }
 
     private lateinit var container: FrameLayout
@@ -125,7 +126,7 @@ class GameActivity : ComponentActivity() {
         enterImmersiveMode()
 
         config = GameConfig.load(this)
-        if (config.system == "nds") requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        if (config.system == "nds" && !dsLandscape()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         saves = SaveStore(this)
         PpssppMultiplayer.customIp = prefs().getString(PREF_MP_IP, null)
         PpssppMultiplayer.mac = prefs().getString(PREF_MP_MAC, null) ?: newMac()
@@ -263,6 +264,8 @@ class GameActivity : ComponentActivity() {
             onMenu = { openMenu() },
         ).also {
             it.visibility = if (touchControlsEnabled()) View.VISIBLE else View.GONE
+            // DS en horizontal: el overlay cubre toda la pantalla; lo que no es un control va al juego (lapiz).
+            if (config.system == "nds" && dsLandscape()) it.onPass = { ev -> view.onTouchEvent(ev) }
             if (dsSplit != null) {
                 // DS: el panel de controles ocupa solo la parte de abajo, asi los toques sobre las pantallas llegan al juego.
                 it.setBackgroundColor(0xFF1E2026.toInt())
@@ -496,6 +499,10 @@ class GameActivity : ComponentActivity() {
             closeMenu()
             askServerIp()
         }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Pantallas DS: " + (if (dsLandscape()) "horizontal" else "vertical") }) {
+            prefs().edit().putBoolean(PREF_DS_LAND, !dsLandscape()).commit()
+            restartGame()
+        }.takeIf { config.system == "nds" },
         GameMenu.Item({ "Modo ligero: " + (if (liteMode()) "si" else "no") }) {
             setLite(!liteMode())
             Toast.makeText(this, "Reinicia el juego para aplicar", Toast.LENGTH_LONG).show()
@@ -569,7 +576,7 @@ class GameActivity : ComponentActivity() {
 
     /** DS en vertical: (alto del juego, alto del panel de controles); null para el resto de sistemas. */
     private fun dsSplit(): Pair<Int, Int>? {
-        if (config.system != "nds") return null
+        if (config.system != "nds" || dsLandscape()) return null
         val dm = resources.displayMetrics
         val w = minOf(dm.widthPixels, dm.heightPixels)
         val h = maxOf(dm.widthPixels, dm.heightPixels)
@@ -582,6 +589,8 @@ class GameActivity : ComponentActivity() {
     // --- modo ligero ---------------------------------------------------------
 
     private fun liteMode() = prefs().getBoolean(PREF_LITE, false)
+
+    private fun dsLandscape() = prefs().getBoolean(PREF_DS_LAND, false)
 
     /** Modo ligero = presets de rendimiento ya existentes: PSP "Rendimiento" o Dolphin "Rendimiento", resolucion 1x. */
     private fun setLite(on: Boolean) {

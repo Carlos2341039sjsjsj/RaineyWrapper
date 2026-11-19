@@ -131,6 +131,18 @@ class TouchOverlay(
 
     /** pointerId -> keys that pointer is holding (a d-pad diagonal holds two). */
     private val held = mutableMapOf<Int, Set<Int>>()
+
+    /** Si se define, los toques que no caen sobre ningun control se reenvian al juego (lapiz de DS en horizontal). */
+    var onPass: ((MotionEvent) -> Unit)? = null
+    private var passId = -1
+    private var passX = 0f
+    private var passY = 0f
+    private fun forward(action: Int, x: Float, y: Float) {
+        val t = android.os.SystemClock.uptimeMillis()
+        val ev = MotionEvent.obtain(t, t, action, x, y, 0)
+        onPass?.invoke(ev)
+        ev.recycle()
+    }
     private val pressedKeys = mutableMapOf<Int, Int>() // keyCode -> number of pointers holding it
 
     /** An on-screen analog stick; the knob follows the finger that grabbed it. */
@@ -725,20 +737,39 @@ class TouchOverlay(
                     onMenu()
                     return true
                 }
+                if (keys.isEmpty() && onPass != null && passId < 0) {
+                    passId = event.getPointerId(i)
+                    passX = event.getX(i); passY = event.getY(i)
+                    forward(MotionEvent.ACTION_DOWN, passX, passY)
+                    return true
+                }
                 update(event.getPointerId(i), keys)
             }
             MotionEvent.ACTION_MOVE -> for (i in 0 until event.pointerCount) {
                 val id = event.getPointerId(i)
+                if (id == passId) {
+                    passX = event.getX(i); passY = event.getY(i)
+                    forward(MotionEvent.ACTION_MOVE, passX, passY)
+                    continue
+                }
                 val stick = sticks.firstOrNull { it.pointerId == id }
                 if (stick != null) moveStick(stick, event.getX(i), event.getY(i))
                 else if (id in held) update(id, keysAt(event.getX(i), event.getY(i)) - MENU)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val id = event.getPointerId(event.actionIndex)
+                if (id == passId) {
+                    forward(MotionEvent.ACTION_UP, event.getX(event.actionIndex), event.getY(event.actionIndex))
+                    passId = -1
+                    return true
+                }
                 val stick = sticks.firstOrNull { it.pointerId == id }
                 if (stick != null) releaseStick(stick) else update(id, emptySet())
             }
-            MotionEvent.ACTION_CANCEL -> releaseAll()
+            MotionEvent.ACTION_CANCEL -> {
+                if (passId >= 0) { forward(MotionEvent.ACTION_UP, passX, passY); passId = -1 }
+                releaseAll()
+            }
         }
         return true
     }
