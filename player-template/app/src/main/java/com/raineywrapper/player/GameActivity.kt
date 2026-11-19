@@ -69,6 +69,8 @@ class GameActivity : ComponentActivity() {
         private const val PREF_BACKEND_TRIAL = "psp_backend_trial"
         private const val PREF_MP_IP = "mp_server_ip"
         private const val PREF_MP_MAC = "mp_mac"
+        private const val PREF_LITE = "lite_mode"
+        private const val PREF_LITE_ASKED = "lite_asked"
     }
 
     private lateinit var container: FrameLayout
@@ -203,6 +205,7 @@ class GameActivity : ComponentActivity() {
             currentRom = rom
             markBackendTrial()
             startEmulator(modFile() ?: rom, sram)
+            offerLiteMode()
             offerMoveGame()
         }
     }
@@ -477,6 +480,11 @@ class GameActivity : ComponentActivity() {
             closeMenu()
             askServerIp()
         }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Modo ligero: " + (if (liteMode()) "si" else "no") }) {
+            setLite(!liteMode())
+            Toast.makeText(this, "Reinicia el juego para aplicar", Toast.LENGTH_LONG).show()
+            menu.refresh()
+        }.takeIf { config.system in listOf("psp", "wii", "gamecube", "gc") },
         GameMenu.Item({ "Controllers: " + listOf("1 player", "Pads = P1, P2...", "Touch = P1, pads = P2...")[padModeLevel()] }) {
             prefs().edit().putInt(PREF_PAD_MODE, (padModeLevel() + 1) % 3).apply()
             gamepad?.let { it.padMode = padModeLevel(); it.resetPorts() }
@@ -544,6 +552,65 @@ class GameActivity : ComponentActivity() {
     // --- graphics -------------------------------------------------------------
 
     private fun prefs() = getSharedPreferences(PREFS, MODE_PRIVATE)
+
+    // --- modo ligero ---------------------------------------------------------
+
+    private fun liteMode() = prefs().getBoolean(PREF_LITE, false)
+
+    /** Modo ligero = presets de rendimiento ya existentes: PSP "Rendimiento" o Dolphin "Rendimiento", resolucion 1x. */
+    private fun setLite(on: Boolean) {
+        val e = prefs().edit().putBoolean(PREF_LITE, on)
+        if (config.system == "psp") e.putInt(PREF_PSP_GFX, if (on) 1 else 0)
+        else e.putInt(PREF_DOLPHIN_OPT, if (on) 0 else 1)
+        if (on) e.putInt(PREF_RESOLUTION, 0)
+        e.commit()
+    }
+
+    /** Primera vez: si la GPU es floja, ofrece el modo ligero. PSP solo en GPU basica; GameCube/Wii tambien en media. */
+    private fun offerLiteMode() {
+        if (config.system !in listOf("psp", "wii", "gamecube", "gc")) return
+        if (prefs().getBoolean(PREF_LITE_ASKED, false)) return
+        lifecycleScope.launch {
+            val gpu = withContext(Dispatchers.Default) { DeviceProfile.gpuName() }
+            val tier = DeviceProfile.tier(gpu)
+            val heavy = config.system != "psp"
+            if (tier > 1 || (tier == 1 && !heavy)) {
+                prefs().edit().putBoolean(PREF_LITE_ASKED, true).apply()
+                return@launch
+            }
+            if (isFinishing || isDestroyed) return@launch
+            showLiteDialog(gpu, tier)
+        }
+    }
+
+    private fun showLiteDialog(gpu: String?, tier: Int) {
+        val gpuText = if (gpu.isNullOrBlank()) "tu GPU" else "$gpu (${DeviceProfile.tierName(tier)})"
+        val details = if (config.system == "psp") {
+            "- Graficos PSP: Rendimiento (salto de cuadros automatico, sin lecturas de GPU)\n" +
+                "- Resolucion interna 1x (480x272)\n\n"
+        } else {
+            "- Resolucion interna 1x\n" +
+                "- Optimizacion Dolphin: Rendimiento (shaders asincronos, fastmem, hilo de CPU, " +
+                "profundidad y texturas rapidas, disco rapido, EFB a textura)\n\n"
+        } + "Todo se puede cambiar despues en el menu."
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Modo ligero")
+            .setMessage("Detectamos $gpuText. Tu dispositivo es mas debil. Activar el modo ligero para que el juego vaya mas fluido? Puedes cambiarlo despues en el menu.")
+            .setPositiveButton("Activar") { _, _ ->
+                setLite(true)
+                prefs().edit().putBoolean(PREF_LITE_ASKED, true).commit()
+                restartGame()
+            }
+            .setNegativeButton("Ahora no") { _, _ -> prefs().edit().putBoolean(PREF_LITE_ASKED, true).apply() }
+            .setNeutralButton("Ver que cambia", null)
+            .setOnCancelListener { prefs().edit().putBoolean(PREF_LITE_ASKED, true).apply() }
+            .create()
+        dialog.show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            dialog.setMessage(details)
+            it.visibility = View.GONE
+        }
+    }
 
     private fun padModeLevel() = prefs().getInt(PREF_PAD_MODE, 0).coerceIn(0, 2)
 
