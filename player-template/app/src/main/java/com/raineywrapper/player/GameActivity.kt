@@ -346,6 +346,12 @@ class GameActivity : ComponentActivity() {
         )
         // TGB Dual: emulate two Game Boys side by side, linked by cable (restart to apply).
         "gb2" -> arrayOf(Variable("tgbdual_gblink_enable", "enabled"))
+        // melonDS: renderizador de software en su propio hilo y compilador JIT (nombres comprobados con
+        // `strings`; los valores "enabled" siguen la convencion de libretro y no estan verificados).
+        "nds" -> arrayOf(
+            Variable("melonds_threaded_renderer", "enabled"),
+            Variable("melonds_jit_enable", "enabled"),
+        )
         else -> emptyArray()
     }
 
