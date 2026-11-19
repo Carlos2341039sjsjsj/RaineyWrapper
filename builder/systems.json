@@ -91,6 +91,19 @@
         "gameboycolor"
       ]
     },
+    "gb2": {
+      "name": "Game Boy 2 players (link cable)",
+      "core": "tgbdual",
+      "extensions": [
+        "gb",
+        "gbc"
+      ],
+      "folders": [
+        "gb2",
+        "gblink",
+        "gb2players"
+      ]
+    },
     "genesis": {
       "name": "Sega Genesis / Mega Drive",
       "core": "genesis_plus_gx",

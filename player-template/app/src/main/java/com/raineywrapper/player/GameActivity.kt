@@ -230,7 +230,7 @@ class GameActivity : ComponentActivity() {
         val view = GLRetroView(this, data)
         retroView = view
         gamepad = GamepadInput(view, config.system, startedWiiController)
-        gamepad?.padMode = if (config.system == "n64") padModeLevel() else 0
+        gamepad?.padMode = if (config.system in listOf("n64", "gb2")) padModeLevel() else 0
         lifecycle.addObserver(view)
         // Registered after the view's own observers, so on resume this runs after
         // LibretroDroid restarts emulation and can re-pause it if the menu is open.
@@ -331,6 +331,8 @@ class GameActivity : ComponentActivity() {
             Variable("pcsx2_ee_cycle_skip", "Mild Underclock"),
             Variable("pcsx2_ee_accurate_fpu", "disabled"),
         )
+        // TGB Dual: emulate two Game Boys side by side, linked by cable (restart to apply).
+        "gb2" -> arrayOf(Variable("tgbdual_gblink_enable", "enabled"))
         else -> emptyArray()
     }
 
@@ -479,7 +481,7 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_PAD_MODE, (padModeLevel() + 1) % 3).apply()
             gamepad?.let { it.padMode = padModeLevel(); it.resetPorts() }
             menu.refresh()
-        }.takeIf { config.system == "n64" },
+        }.takeIf { config.system in listOf("n64", "gb2") },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
             menu.refresh()

@@ -60,7 +60,7 @@ class TouchOverlay(
 
         fun layoutFor(system: String, wiiController: WiiController = WiiController.NUNCHUK): Layout = when (system) {
             "gba" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), listOf("L" to L, "R" to R))
-            "gb", "sms", "gg" -> Layout(listOf(Face(if (system == "gb") "B" else "1", B, -0.45f, 0.25f), Face(if (system == "gb") "A" else "2", A, 0.45f, -0.25f)), emptyList())
+            "gb", "gb2", "sms", "gg" -> Layout(listOf(Face(if (system == "gb" || system == "gb2") "B" else "1", B, -0.45f, 0.25f), Face(if (system == "gb" || system == "gb2") "A" else "2", A, 0.45f, -0.25f)), emptyList())
             // Genesis Plus GX: RetroPad Y/B/A = Genesis A/B/C, Select = Mode.
             "genesis" -> Layout(listOf(Face("A", Y, -0.6f, 0.2f), Face("B", B, 0f, 0f), Face("C", A, 0.6f, -0.2f)), emptyList(), selectLabel = "MODE")
             // Mupen64Plus-Next: RetroPad B/Y = N64 A/B, L2 = Z. C-buttons are on the right stick.
