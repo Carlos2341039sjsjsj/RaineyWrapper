@@ -68,6 +68,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_PSP_BACKEND = "psp_backend"
         private const val PREF_BACKEND_TRIAL = "psp_backend_trial"
         private const val PREF_MP_IP = "mp_server_ip"
+        private const val PREF_MP_MAC = "mp_mac"
     }
 
     private lateinit var container: FrameLayout
@@ -123,6 +124,7 @@ class GameActivity : ComponentActivity() {
         config = GameConfig.load(this)
         saves = SaveStore(this)
         PpssppMultiplayer.customIp = prefs().getString(PREF_MP_IP, null)
+        PpssppMultiplayer.mac = prefs().getString(PREF_MP_MAC, null) ?: newMac()
         revertFailedBackendTrial()
         menu = GameMenu(this, config.title).apply { setItems(menuItems()) }
     }
@@ -462,6 +464,11 @@ class GameActivity : ComponentActivity() {
         }.takeIf { config.system == "psp" },
         GameMenu.Item({ "PSP backend: " + pspBackendLabel() }) {
             prefs().edit().putInt(PREF_PSP_BACKEND, (pspBackend() + 1) % 3).apply()
+            menu.refresh()
+        }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Multiplayer MAC: " + (PpssppMultiplayer.mac ?: "-").chunked(2).joinToString(":") }) {
+            PpssppMultiplayer.mac = newMac()
+            Toast.makeText(this, "Nueva MAC. Reinicia el juego", Toast.LENGTH_LONG).show()
             menu.refresh()
         }.takeIf { config.system == "psp" },
         GameMenu.Item({ "Multiplayer IP: " + (PpssppMultiplayer.customIp ?: "sin definir") }) {
@@ -840,6 +847,13 @@ class GameActivity : ComponentActivity() {
     private fun wiiController(): WiiController =
         prefs().getString(PREF_WII_CONTROLLER, null)?.let { name -> WiiController.entries.firstOrNull { it.name == name } }
             ?: WiiController.NUNCHUK
+
+    /** A fresh MAC (02 + 10 random digits), saved so this install keeps it. */
+    private fun newMac(): String {
+        val m = "02" + (1..10).joinToString("") { kotlin.random.Random.nextInt(10).toString() }
+        prefs().edit().putString(PREF_MP_MAC, m).apply()
+        return m
+    }
 
     private fun multiplayerLevel(): Int {
         return prefs().getInt(PREF_MULTIPLAYER, 0).coerceIn(0, PpssppMultiplayer.levels().size - 1)

@@ -5,7 +5,21 @@ import com.swordfish.libretrodroid.Variable
 class ExtraLevel(val label: String, val variables: List<Variable>)
 
 object PpssppMultiplayer {
-    fun levels() = listOf(
+    /** Every level except "Apagado" also carries this install's own MAC address. */
+    fun levels(): List<ExtraLevel> = base().mapIndexed { i, l ->
+        if (i == 0) l else ExtraLevel(l.label, l.variables + macVariables())
+    }
+
+    /** 12 digits (0-9), set at startup; the core takes the MAC as ppsspp_change_mac_address01..12. */
+    var mac: String? = null
+
+    private fun macVariables(): List<Variable> {
+        val m = mac ?: return emptyList()
+        if (m.length != 12 || !m.all { it.isDigit() }) return emptyList()
+        return m.mapIndexed { i, c -> Variable("ppsspp_change_mac_address" + (i + 1).toString().padStart(2, '0'), c.toString()) }
+    }
+
+    private fun base() = listOf(
         ExtraLevel("Apagado", emptyList()),
         ExtraLevel("Localhost", listOf(
             Variable("ppsspp_enable_wlan", "enabled"),
