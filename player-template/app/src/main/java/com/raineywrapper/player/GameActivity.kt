@@ -73,6 +73,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_LITE = "lite_mode"
         private const val PREF_LITE_ASKED = "lite_asked"
         private const val PREF_DS_LAND = "ds_landscape"
+        private const val PREF_DS_PERF = "ds_perf_high"
     }
 
     private lateinit var container: FrameLayout
@@ -354,7 +355,12 @@ class GameActivity : ComponentActivity() {
         "nds" -> arrayOf(
             Variable("melonds_threaded_renderer", "enabled"),
             Variable("melonds_jit_enable", "enabled"),
-        )
+        ) + (if (prefs().getBoolean(PREF_DS_PERF, false)) arrayOf(
+            // "Rendimiento alto": optimizaciones extra del JIT (se pueden quitar desde el menu).
+            Variable("melonds_jit_fast_memory", "enabled"),
+            Variable("melonds_jit_branch_optimisations", "enabled"),
+            Variable("melonds_jit_literal_optimisations", "enabled"),
+        ) else emptyArray())
         else -> emptyArray()
     }
 
@@ -499,6 +505,10 @@ class GameActivity : ComponentActivity() {
             closeMenu()
             askServerIp()
         }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "DS rendimiento: " + (if (prefs().getBoolean(PREF_DS_PERF, false)) "alto" else "normal") }) {
+            prefs().edit().putBoolean(PREF_DS_PERF, !prefs().getBoolean(PREF_DS_PERF, false)).commit()
+            restartGame()
+        }.takeIf { config.system == "nds" },
         GameMenu.Item({ "Pantallas DS: " + (if (dsLandscape()) "horizontal" else "vertical") }) {
             prefs().edit().putBoolean(PREF_DS_LAND, !dsLandscape()).commit()
             restartGame()
