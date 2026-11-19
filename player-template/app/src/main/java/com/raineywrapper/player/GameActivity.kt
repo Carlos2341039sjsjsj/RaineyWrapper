@@ -360,7 +360,7 @@ class GameActivity : ComponentActivity() {
             Variable("melonds_jit_fast_memory", "enabled"),
             Variable("melonds_jit_branch_optimisations", "enabled"),
             Variable("melonds_jit_literal_optimisations", "enabled"),
-        ) else emptyArray())
+        ) else emptyArray<Variable>())
         else -> emptyArray()
     }
 
