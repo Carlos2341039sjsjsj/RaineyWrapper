@@ -3,6 +3,7 @@ package com.raineywrapper.player
 import android.content.ClipData
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
@@ -124,6 +125,7 @@ class GameActivity : ComponentActivity() {
         enterImmersiveMode()
 
         config = GameConfig.load(this)
+        if (config.system == "nds") requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         saves = SaveStore(this)
         PpssppMultiplayer.customIp = prefs().getString(PREF_MP_IP, null)
         PpssppMultiplayer.mac = prefs().getString(PREF_MP_MAC, null) ?: newMac()
@@ -240,9 +242,11 @@ class GameActivity : ComponentActivity() {
         lifecycle.addObserver(LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME && menu.isOpen) pauseEmulation()
         })
+        val dsSplit = dsSplit()
         container.addView(
             view,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER),
+            if (dsSplit != null) FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dsSplit.first, Gravity.TOP)
+            else FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER),
         )
 
         overlay = TouchOverlay(this, TouchOverlay.layoutFor(config.system, startedWiiController),
@@ -259,7 +263,13 @@ class GameActivity : ComponentActivity() {
             onMenu = { openMenu() },
         ).also {
             it.visibility = if (touchControlsEnabled()) View.VISIBLE else View.GONE
-            container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            if (dsSplit != null) {
+                // DS: el panel de controles ocupa solo la parte de abajo, asi los toques sobre las pantallas llegan al juego.
+                it.setBackgroundColor(0xFF1E2026.toInt())
+                container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dsSplit.second, Gravity.BOTTOM))
+            } else {
+                container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            }
         }
         // FPS counter: top middle, just below the touch controls' menu button (which ends at 0.9 of
         // TouchOverlay's size unit, a tenth of the short side).
@@ -550,6 +560,16 @@ class GameActivity : ComponentActivity() {
     )
 
     // --- graphics -------------------------------------------------------------
+
+    /** DS en vertical: (alto del juego, alto del panel de controles); null para el resto de sistemas. */
+    private fun dsSplit(): Pair<Int, Int>? {
+        if (config.system != "nds") return null
+        val dm = resources.displayMetrics
+        val w = minOf(dm.widthPixels, dm.heightPixels)
+        val h = maxOf(dm.widthPixels, dm.heightPixels)
+        val gameH = minOf(w * 3 / 2, h * 62 / 100)
+        return gameH to (h - gameH)
+    }
 
     private fun prefs() = getSharedPreferences(PREFS, MODE_PRIVATE)
 

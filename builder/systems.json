@@ -104,6 +104,23 @@
         "gb2players"
       ]
     },
+    "nds": {
+      "name": "Nintendo DS",
+      "core": "melonds",
+      "extensions": [
+        "nds"
+      ],
+      "folders": [
+        "nds",
+        "ds",
+        "nintendods"
+      ],
+      "bios": [
+        "bios7.bin",
+        "bios9.bin",
+        "firmware.bin"
+      ]
+    },
     "genesis": {
       "name": "Sega Genesis / Mega Drive",
       "core": "genesis_plus_gx",
