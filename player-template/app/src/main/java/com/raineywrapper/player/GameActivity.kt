@@ -58,6 +58,7 @@ class GameActivity : ComponentActivity() {
   const val PREF_DOLPHIN_OPT = "dolphin_opt_level"
         private const val PREF_WII_CONTROLLER = "wii_controller"
         private const val PREF_FPS = "fps_counter"
+        private const val PREF_PAD_MODE = "pad_mode"
         private const val PREF_MOD_PATH = "mod_path"
         private const val PREF_PSP_GFX = "psp_gfx_level"
         private const val PREF_MOVED_PATH = "moved_path"
@@ -227,6 +228,7 @@ class GameActivity : ComponentActivity() {
         val view = GLRetroView(this, data)
         retroView = view
         gamepad = GamepadInput(view, config.system, startedWiiController)
+        gamepad?.padMode = if (config.system == "n64") padModeLevel() else 0
         lifecycle.addObserver(view)
         // Registered after the view's own observers, so on resume this runs after
         // LibretroDroid restarts emulation and can re-pause it if the menu is open.
@@ -466,6 +468,11 @@ class GameActivity : ComponentActivity() {
             closeMenu()
             askServerIp()
         }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Controllers: " + listOf("1 player", "Pads = P1, P2...", "Touch = P1, pads = P2...")[padModeLevel()] }) {
+            prefs().edit().putInt(PREF_PAD_MODE, (padModeLevel() + 1) % 3).apply()
+            gamepad?.let { it.padMode = padModeLevel(); it.resetPorts() }
+            menu.refresh()
+        }.takeIf { config.system == "n64" },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
             menu.refresh()
@@ -528,6 +535,8 @@ class GameActivity : ComponentActivity() {
     // --- graphics -------------------------------------------------------------
 
     private fun prefs() = getSharedPreferences(PREFS, MODE_PRIVATE)
+
+    private fun padModeLevel() = prefs().getInt(PREF_PAD_MODE, 0).coerceIn(0, 2)
 
     private fun pspGfxLevel() =
         prefs().getInt(PREF_PSP_GFX, 0).coerceIn(0, PpssppGraphics.levels().size - 1)

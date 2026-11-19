@@ -20,6 +20,18 @@ class GamepadInput(
     /** Systems with an analog stick of their own; elsewhere the left stick also drives the d-pad. */
     private val hasAnalog = system in setOf("n64", "psp", "dreamcast", "gamecube", "wii")
 
+    /** 0 = everything to port 0; 1 = each pad gets the next port (P1, P2...); 2 = pads start at P2 (touch is P1). */
+    var padMode = 0
+    private val ports = HashMap<Int, Int>()
+
+    fun resetPorts() = ports.clear()
+
+    private fun portOf(deviceId: Int): Int {
+        if (padMode == 0) return 0
+        val base = if (padMode == 2) 1 else 0
+        return ports.getOrPut(deviceId) { minOf(base + ports.size, 3) }
+    }
+
     companion object {
         private const val STICK_DEADZONE = 0.5f
 
@@ -53,7 +65,7 @@ class GamepadInput(
         if (event.keyCode !in GAMEPAD_KEYS) return false
         if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return true
         if (event.repeatCount > 0) return true
-        retroView.sendKeyEvent(event.action, systemRemap(toRetroKey(event.keyCode)), 0)
+        retroView.sendKeyEvent(event.action, systemRemap(toRetroKey(event.keyCode)), portOf(event.deviceId))
         return true
     }
 
@@ -106,6 +118,7 @@ class GamepadInput(
 
     fun onMotionEvent(event: MotionEvent): Boolean {
         if (event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) return false
+        val port = portOf(event.deviceId)
 
         // D-pads on many handhelds report as a hat axis. Systems without analog
         // sticks (GBA, NES, ...) also get the left stick folded into the d-pad.
@@ -117,14 +130,14 @@ class GamepadInput(
             x = if (abs(sx) > STICK_DEADZONE) sx else 0f
             y = if (abs(sy) > STICK_DEADZONE) sy else 0f
         }
-        retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_DPAD, x, y, 0)
+        retroView.sendMotionEvent(GLRetroView.MOTION_SOURCE_DPAD, x, y, port)
         retroView.sendMotionEvent(
             GLRetroView.MOTION_SOURCE_ANALOG_LEFT,
-            event.getAxisValue(MotionEvent.AXIS_X), event.getAxisValue(MotionEvent.AXIS_Y), 0,
+            event.getAxisValue(MotionEvent.AXIS_X), event.getAxisValue(MotionEvent.AXIS_Y), port,
         )
         retroView.sendMotionEvent(
             GLRetroView.MOTION_SOURCE_ANALOG_RIGHT,
-            event.getAxisValue(MotionEvent.AXIS_Z), event.getAxisValue(MotionEvent.AXIS_RZ), 0,
+            event.getAxisValue(MotionEvent.AXIS_Z), event.getAxisValue(MotionEvent.AXIS_RZ), port,
         )
         return true
     }
