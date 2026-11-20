@@ -114,6 +114,12 @@ class TouchOverlay(
                     selectLabel = "−", startLabel = "+",
                 )
             }
+            // Azahar: RetroPad A/B/X/Y = 3DS A/B/X/Y, L/R = L/R, el stick izquierdo es el circle pad.
+            "3ds" -> Layout(
+                listOf(Face("X", X, 0f, -0.55f), Face("A", A, 0.55f, 0f), Face("B", B, 0f, 0.55f), Face("Y", Y, -0.55f, 0f)),
+                listOf("L" to L, "R" to R),
+                leftStick = true,
+            )
             "psp" -> Layout(
                 listOf(Face("△", X, 0f, -0.55f), Face("○", A, 0.55f, 0f), Face("✕", B, 0f, 0.55f), Face("□", Y, -0.55f, 0f)),
                 listOf("L" to L, "R" to R),

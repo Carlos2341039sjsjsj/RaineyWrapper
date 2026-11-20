@@ -120,6 +120,7 @@ class GameActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLogger.install(this)
         // Juegos web (RPG Maker MV/MZ): los abre otra pantalla, sin nucleo libretro.
         val isWeb = try { GameConfig.load(this).system == "rpgmv" } catch (e: Exception) { false }
         if (isWeb) {
@@ -136,7 +137,7 @@ class GameActivity : ComponentActivity() {
         enterImmersiveMode()
 
         config = GameConfig.load(this)
-        if (config.system == "nds" && !dsLandscape()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        if (isDualScreen() && !dsLandscape()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
         saves = SaveStore(this)
         PpssppMultiplayer.customIp = prefs().getString(PREF_MP_IP, null)
         PpssppMultiplayer.mac = prefs().getString(PREF_MP_MAC, null) ?: newMac()
@@ -275,7 +276,7 @@ class GameActivity : ComponentActivity() {
         ).also {
             it.visibility = if (touchControlsEnabled()) View.VISIBLE else View.GONE
             // DS en horizontal: el overlay cubre toda la pantalla; lo que no es un control va al juego (lapiz).
-            if (config.system == "nds" && dsLandscape()) it.onPass = { ev -> view.onTouchEvent(ev) }
+            if (isDualScreen() && dsLandscape()) it.onPass = { ev -> view.onTouchEvent(ev) }
             if (dsSplit != null) {
                 // DS: el panel de controles ocupa solo la parte de abajo, asi los toques sobre las pantallas llegan al juego.
                 it.setBackgroundColor(0xFF1E2026.toInt())
@@ -598,11 +599,13 @@ class GameActivity : ComponentActivity() {
 
     /** DS en vertical: (alto del juego, alto del panel de controles); null para el resto de sistemas. */
     private fun dsSplit(): Pair<Int, Int>? {
-        if (config.system != "nds" || dsLandscape()) return null
+        if (!isDualScreen() || dsLandscape()) return null
         val dm = resources.displayMetrics
         val w = minOf(dm.widthPixels, dm.heightPixels)
         val h = maxOf(dm.widthPixels, dm.heightPixels)
-        val gameH = minOf(w * 3 / 2, h * 62 / 100)
+        // DS: dos pantallas de 256x192 (2:3). 3DS: 400x240 sobre 320x240 (5:6).
+        val ratio = if (config.system == "3ds") 6f / 5f else 3f / 2f
+        val gameH = minOf((w * ratio).toInt(), h * 62 / 100)
         return gameH to (h - gameH)
     }
 
@@ -613,6 +616,9 @@ class GameActivity : ComponentActivity() {
     private fun liteMode() = prefs().getBoolean(PREF_LITE, false)
 
     private fun dsLandscape() = prefs().getBoolean(PREF_DS_LAND, false)
+
+    /** DS y 3DS: dos pantallas apiladas, la de abajo es tactil. */
+    private fun isDualScreen() = config.system == "nds" || config.system == "3ds"
 
     /** Modo ligero = presets de rendimiento ya existentes: PSP "Rendimiento" o Dolphin "Rendimiento", resolucion 1x. */
     private fun setLite(on: Boolean) {

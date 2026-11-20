@@ -15,7 +15,7 @@ for core in "$@"; do
     echo "Fetching azahar_libretro.so"
     curl -fsSL -o "$TMP/azahar_libretro.so.zip" "$BUILDBOT/azahar_libretro.so.zip"
     unzip -q -o "$TMP/azahar_libretro.so.zip" -d "$TMP"
-    mv "$TMP/azahar_libretro.so" "$DEST/libazahar_libretro.so"
+    mv "$TMP/azahar_libretro.so" "$DEST/libazahar_libretro_android.so"
     continue
   fi
 
