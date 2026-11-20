@@ -1,7 +1,7 @@
 #!/bin/sh
 # Downloads arm64-v8a libretro cores from the libretro buildbot into the player template.
 # Usage: cores/fetch_cores.sh [core ...]   (default: mgba)
-# All cores the template ships: mgba pcsx_rearmed snes9x genesis_plus_gx mupen64plus_next_gles3 ppsspp
+# All cores the template ships: mgba pcsx_rearmed snes9x genesis_plus_gx mupen64plus_next_gles3 ppsspp azahar
 set -eu
 BUILDBOT="https://buildbot.libretro.com/nightly/android/latest/arm64-v8a"
 # CORE_DEST overrides where cores go (the public build keeps its replacement cores in cores/public/).
@@ -11,6 +11,14 @@ mkdir -p "$DEST"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 for core in "$@"; do
+  if [ "$core" = "azahar" ]; then
+    echo "Fetching azahar_libretro.so"
+    curl -fsSL -o "$TMP/azahar_libretro.so.zip" "$BUILDBOT/azahar_libretro.so.zip"
+    unzip -q -o "$TMP/azahar_libretro.so.zip" -d "$TMP"
+    mv "$TMP/azahar_libretro.so" "$DEST/libazahar_libretro.so"
+    continue
+  fi
+
   so="${core}_libretro_android.so"
   echo "Fetching $so"
   curl -fsSL -o "$TMP/$so.zip" "$BUILDBOT/$so.zip"
