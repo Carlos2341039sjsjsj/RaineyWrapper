@@ -23,7 +23,7 @@ jobs:
           "$SM" "platforms;android-37.0" || "$SM" "platforms;android-37"
           "$SM" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.22.1"
       - name: Fetch cores
-        run: cores/fetch_cores.sh mupen64plus_next_gles3 ppsspp dolphin mgba genesis_plus_gx tgbdual melonds
+        run: cores/fetch_cores.sh mupen64plus_next_gles3 ppsspp dolphin mgba genesis_plus_gx tgbdual melonds fceumm pcsx_rearmed mednafen_pce_fast stella handy mednafen_ngp
       - name: Doctor
         run: ./raineywrapper doctor
       - name: Build

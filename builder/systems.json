@@ -160,6 +160,45 @@
         "gamegear"
       ],
       "publicCore": "smsplus"
+    },
+    "nes": {
+      "name": "Nintendo (NES / Famicom)",
+      "core": "fceumm",
+      "extensions": ["nes", "fds", "unf"],
+      "folders": ["nes", "famicom"],
+      "bios": ["disksys.rom"]
+    },
+    "psx": {
+      "name": "PlayStation",
+      "core": "pcsx_rearmed",
+      "extensions": ["cue", "chd", "pbp", "m3u", "iso", "bin"],
+      "folders": ["psx", "ps1", "playstation"],
+      "bios": ["scph5500.bin", "scph5501.bin", "scph5502.bin"]
+    },
+    "pce": {
+      "name": "PC Engine / TurboGrafx-16",
+      "core": "mednafen_pce_fast",
+      "extensions": ["pce", "sgx"],
+      "folders": ["pce", "pcengine", "turbografx"]
+    },
+    "atari2600": {
+      "name": "Atari 2600",
+      "core": "stella",
+      "extensions": ["a26"],
+      "folders": ["atari2600", "atari"]
+    },
+    "lynx": {
+      "name": "Atari Lynx",
+      "core": "handy",
+      "extensions": ["lnx"],
+      "folders": ["lynx"],
+      "bios": ["lynxboot.img"]
+    },
+    "ngp": {
+      "name": "Neo Geo Pocket / Color",
+      "core": "mednafen_ngp",
+      "extensions": ["ngp", "ngc"],
+      "folders": ["ngp", "neogeopocket"]
     }
   }
 }

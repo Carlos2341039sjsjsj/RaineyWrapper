@@ -59,6 +59,9 @@ class TouchOverlay(
         const val STYLE_COUNT = 5 // Clasico, PlayStation, Xbox, Wii U / Switch
 
         fun layoutFor(system: String, wiiController: WiiController = WiiController.NUNCHUK): Layout = when (system) {
+            "nes", "lynx", "ngp" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), emptyList())
+            "pce" -> Layout(listOf(Face("II", B, -0.45f, 0.25f), Face("I", A, 0.45f, -0.25f)), emptyList())
+            "atari2600" -> Layout(listOf(Face("FIRE", B, 0f, 0f)), emptyList())
             "gba" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), listOf("L" to L, "R" to R))
             "gb", "gb2", "sms", "gg" -> Layout(listOf(Face(if (system == "gb" || system == "gb2") "B" else "1", B, -0.45f, 0.25f), Face(if (system == "gb" || system == "gb2") "A" else "2", A, 0.45f, -0.25f)), emptyList())
             // Genesis Plus GX: RetroPad Y/B/A = Genesis A/B/C, Select = Mode.
