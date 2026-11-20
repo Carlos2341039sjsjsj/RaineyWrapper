@@ -364,6 +364,9 @@ class GameActivity : ComponentActivity() {
         "nds" -> arrayOf(
             Variable("melonds_threaded_renderer", "enabled"),
             Variable("melonds_jit_enable", "enabled"),
+            // Pantalla tactil: el modo "Touch" lee el puntero que manda el reproductor (el modo por
+            // defecto lee un mouse y por eso el dedo no hacia nada). Nombre comprobado con `strings`.
+            Variable("melonds_touch_mode", "Touch"),
         ) + (if (prefs().getBoolean(PREF_DS_PERF, false)) arrayOf(
             // "Rendimiento alto": optimizaciones extra del JIT (se pueden quitar desde el menu).
             Variable("melonds_jit_fast_memory", "enabled"),

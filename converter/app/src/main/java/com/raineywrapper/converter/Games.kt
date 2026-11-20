@@ -185,6 +185,51 @@ object GameMakerPc {
     fun looksLikeGame(entryNames: List<String>): Boolean = entryNames.any { File(it).name.equals("data.win", ignoreCase = true) }
 }
 
+/**
+ * Juegos RPG Maker MV / MZ empaquetados con NW.js: `Game.exe` es solo el lanzador de Windows y el juego
+ * es un index.html con su carpeta js/ (en `www/` para MV, junto al .exe para MZ). Nunca se ejecuta el .exe.
+ */
+object RpgMv {
+    private fun child(dir: File?, name: String): File? =
+        dir?.listFiles()?.firstOrNull { it.name.equals(name, ignoreCase = true) }
+
+    private fun looksLikeGame(root: File?): Boolean {
+        val index = child(root, "index.html")
+        return index != null && index.isFile && child(root, "js")?.isDirectory == true
+    }
+
+    /** El index.html del juego cuyo lanzador es [exe], o null si no es un juego MV/MZ. */
+    fun indexFor(exe: File): File? {
+        if (exe.ext != "exe") return null
+        val dir = exe.parentFile ?: return null
+        val www = child(dir, "www")?.takeIf { it.isDirectory }
+        val root = listOfNotNull(www, dir).firstOrNull { looksLikeGame(it) } ?: return null
+        return child(root, "index.html")
+    }
+}
+
+/** RPG Maker XP (RGSS1) y VX (RGSS2): el .exe es un reproductor de Windows y esos motores no estan soportados. */
+object RpgMakerOld {
+    fun engineOf(exe: File): String? {
+        if (exe.ext != "exe") return null
+        val files = exe.parentFile?.listFiles()?.toList().orEmpty()
+        val data = files.firstOrNull { it.isDirectory && it.name.equals("Data", ignoreCase = true) }
+            ?.listFiles()?.map { it.name.lowercase() }.orEmpty()
+        return when {
+            files.any { it.isFile && it.ext == "rgssad" } || "scripts.rxdata" in data -> "XP"
+            files.any { it.isFile && it.ext == "rgss2a" } || "scripts.rvdata" in data -> "VX"
+            else -> null
+        }
+    }
+}
+
+/** Nombre del juego para un juego de carpeta: la carpeta del index.html, o la de arriba si esta en `www`. */
+fun gameFolderName(file: File): String {
+    val dir = file.parentFile
+    val base = if (dir?.name.equals("www", ignoreCase = true)) dir?.parentFile else dir
+    return base?.name ?: "game"
+}
+
 /** Id del sistema de un .exe segun los archivos que tiene al lado, o null si no es un juego conocido. */
 fun systemIdForExe(exe: File): String? = when {
     Rgss3.isGameExe(exe) -> "rgss3"
@@ -209,7 +254,7 @@ sealed class GameSource(val file: File, val system: GameSystem) {
     class Single(file: File, system: GameSystem) : GameSource(file, system) {
         // Juegos de carpeta (web, VX Ace): el nombre es el de su carpeta, porque el archivo es siempre
         // index.html / Game.exe y no dice nada del juego.
-        override val displayName get() = if (system.folderGame) (file.parentFile?.name ?: "game") + "." + file.ext else file.name
+        override val displayName get() = if (system.folderGame) gameFolderName(file) + "." + file.ext else file.name
     }
 
     class Zipped(file: File, system: GameSystem, val entryName: String, val entrySize: Long) : GameSource(file, system) {
@@ -232,15 +277,30 @@ sealed class GameSource(val file: File, val system: GameSystem) {
             if (ext in TRACK_EXTENSIONS && cue.exists()) {
                 throw UserError("${file.name} is one track of a disc.\n\nPick ${cue.name} instead.")
             }
+            // Game.exe de RPG Maker MV/MZ: el juego es el index.html que tiene al lado; el .exe no se ejecuta.
+            if (ext == "exe") {
+                RpgMv.indexFor(file)?.let { index ->
+                    val web = systemOverride ?: Systems.all(context).firstOrNull { it.id == "rpgmv" }
+                        ?: throw UserError("Este conversor no incluye el sistema de juegos web.")
+                    return Single(index, web)
+                }
+            }
             // Un .exe suelto no es un juego: solo valen los de RPG Maker VX Ace (con su .ini y su .rgss3a al lado)
             // y los de GameMaker (con su data.win). El tipo lo dicen los archivos, no la carpeta.
             val exeSystemId = if (ext == "exe") systemIdForExe(file) else null
             if (ext == "exe" && exeSystemId == null) {
+                RpgMakerOld.engineOf(file)?.let { engine ->
+                    throw UserError(
+                        "${file.name} es un juego de RPG Maker $engine, que todavia no es compatible.\n\n" +
+                            "Solo se soportan RPG Maker MV/MZ y VX Ace.",
+                    )
+                }
                 throw UserError(
                     "${file.name} no parece un juego compatible.\n\n" +
                         "RPG Maker VX Ace: tiene que estar junto a ${file.nameWithoutExtension}.ini y a su .rgss3a " +
                         "(o a Data/Scripts.rvdata2).\n" +
-                        "GameMaker: tiene que estar junto a data.win.",
+                        "GameMaker: tiene que estar junto a data.win.\n" +
+                        "RPG Maker MV/MZ: tiene que estar junto a su index.html (o a la carpeta www).",
                 )
             }
             val system = systemOverride
@@ -256,7 +316,7 @@ sealed class GameSource(val file: File, val system: GameSystem) {
             ZipFile(file).use { zip ->
                 val entries = zip.entries().asSequence().filter { !it.isDirectory }.toList()
                 if (entries.any { File(it.name).name.equals("index.html", ignoreCase = true) }) {
-                    throw UserError("${file.name} es un juego web (RPG Maker MV/MZ).\n\nDescomprimelo primero y elegi su archivo index.html.")
+                    throw UserError("${file.name} es un juego web (RPG Maker MV/MZ).\n\nDescomprimelo primero y elegi su archivo index.html (o su Game.exe).")
                 }
                 if (Rgss3.looksLikeGame(entries.map { it.name })) {
                     throw UserError("${file.name} es un juego de RPG Maker VX Ace.\n\nDescomprimelo primero y elegi su archivo Game.exe.")

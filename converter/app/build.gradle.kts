@@ -17,7 +17,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = raineywrapperVersionCode
-        versionName = "43"
+        versionName = "42"
     }
 
     signingConfigs {
