@@ -109,6 +109,12 @@ def pick_system(systems: dict, ext: str, path: Path) -> dict:
         candidates = [c for c in candidates if c["system"] == kind] or candidates
     folders = [path.parent.name.lower(), path.parent.parent.name.lower()]
     system = next((c for c in candidates if any(f in c["folders"] for f in folders)), candidates[0])
+    if system["core"] is None and not system["external"]:
+        # Juegos de carpeta (RPG Maker MV/MZ y VX Ace): no usan un core libretro.
+        raise BuildError(
+            f"{path.name}: {system['name']} games are converted with the RaineyWrapper app on the device, "
+            "not with the command-line builder."
+        )
     if system["external"]:
         raise BuildError(
             f"{path.name}: {system['name']} games play in an emulator app on the device, so they're converted "

@@ -28,6 +28,11 @@ data class GameSystem(
     val bios: List<String>,
     /** The game can't start without a BIOS (PS2). */
     val biosRequired: Boolean,
+    /**
+     * The "ROM" is one file inside a game folder (index.html, Game.exe) and needs its sibling files,
+     * so the game is always played from where it is: never embedded, never zipped.
+     */
+    val folderGame: Boolean = false,
 ) {
     val coreLibrary get() = core?.let { "lib${it}_libretro_android.so" }
     val isExternal get() = external.isNotEmpty()
@@ -78,6 +83,7 @@ object Systems {
                 } ?: emptyList(),
                 bios = s.optJSONArray("bios")?.strings() ?: emptyList(),
                 biosRequired = s.optBoolean("biosRequired", false),
+                folderGame = s.optBoolean("folderGame", false),
             )
         }.toList().also { cache = it }
     }
@@ -139,6 +145,33 @@ object Systems {
     }
 }
 
+/**
+ * RPG Maker VX Ace (RGSS3) games have no index.html or RPG_RT.ldb. Unzipped they look like
+ * `Game.exe`, `Game.ini` and `Game.rgss3a` (or a `Data` folder with loose `.rvdata2` files).
+ * The .exe is just the RGSS player: the game lives in the files next to it.
+ */
+object Rgss3 {
+    private fun siblings(exe: File): List<File> = exe.parentFile?.listFiles()?.toList().orEmpty()
+
+    /** `Game.exe` is a VX Ace game when `Game.ini` (same name) and the encrypted archive or loose data sit next to it. */
+    fun isGameExe(exe: File): Boolean {
+        if (exe.ext != "exe") return false
+        val files = siblings(exe)
+        val hasIni = files.any { it.isFile && it.name.equals(exe.nameWithoutExtension + ".ini", ignoreCase = true) }
+        if (!hasIni) return false
+        val hasArchive = files.any { it.isFile && it.ext == "rgss3a" }
+        val data = files.firstOrNull { it.isDirectory && it.name.equals("Data", ignoreCase = true) }
+        val hasLooseData = data?.listFiles()?.any { it.isFile && it.name.equals("Scripts.rvdata2", ignoreCase = true) } == true
+        return hasArchive || hasLooseData
+    }
+
+    /** True for a zip entry list that holds a VX Ace game. */
+    fun looksLikeGame(entryNames: List<String>): Boolean {
+        val names = entryNames.map { File(it).name.lowercase() }
+        return names.any { it.endsWith(".rgss3a") || it == "scripts.rvdata2" }
+    }
+}
+
 /** Track files that only make sense together with a .cue sheet. */
 private val TRACK_EXTENSIONS = setOf("bin", "img", "iso", "wav")
 /** Already-compressed formats; deflating them again only costs time. */
@@ -154,8 +187,9 @@ sealed class GameSource(val file: File, val system: GameSystem) {
     open val canLink get() = true
 
     class Single(file: File, system: GameSystem) : GameSource(file, system) {
-        // Juego web: el nombre es el de su carpeta (el archivo siempre se llama index.html).
-        override val displayName get() = if (system.id == "rpgmv") (file.parentFile?.name ?: "game") + ".html" else file.name
+        // Juegos de carpeta (web, VX Ace): el nombre es el de su carpeta, porque el archivo es siempre
+        // index.html / Game.exe y no dice nada del juego.
+        override val displayName get() = if (system.folderGame) (file.parentFile?.name ?: "game") + "." + file.ext else file.name
     }
 
     class Zipped(file: File, system: GameSystem, val entryName: String, val entrySize: Long) : GameSource(file, system) {
@@ -178,6 +212,14 @@ sealed class GameSource(val file: File, val system: GameSystem) {
             if (ext in TRACK_EXTENSIONS && cue.exists()) {
                 throw UserError("${file.name} is one track of a disc.\n\nPick ${cue.name} instead.")
             }
+            // Un .exe suelto no es un juego: solo vale el de RPG Maker VX Ace, que lleva su .ini y su .rgss3a al lado.
+            if (ext == "exe" && !Rgss3.isGameExe(file)) {
+                throw UserError(
+                    "${file.name} no parece un juego de RPG Maker VX Ace.\n\n" +
+                        "Tiene que estar en la carpeta del juego, junto a su .ini (${file.nameWithoutExtension}.ini) " +
+                        "y a su archivo .rgss3a (o a la carpeta Data con Scripts.rvdata2).",
+                )
+            }
             val system = systemOverride ?: Systems.forFile(context, ext, file)
                 ?: throw UserError("${file.name}: .$ext files aren't supported.")
             if (ext == "cue") return Sheet(file, system, parseSheet(file, CUE_FILES))
@@ -190,6 +232,9 @@ sealed class GameSource(val file: File, val system: GameSystem) {
                 val entries = zip.entries().asSequence().filter { !it.isDirectory }.toList()
                 if (entries.any { File(it.name).name.equals("index.html", ignoreCase = true) }) {
                     throw UserError("${file.name} es un juego web (RPG Maker MV/MZ).\n\nDescomprimelo primero y elegi su archivo index.html.")
+                }
+                if (Rgss3.looksLikeGame(entries.map { it.name })) {
+                    throw UserError("${file.name} es un juego de RPG Maker VX Ace.\n\nDescomprimelo primero y elegi su archivo Game.exe.")
                 }
                 if (entries.any { File(it.name).ext == "cue" }) {
                     throw UserError("${file.name} contains a disc image (.cue).\n\nUnzip it first, then pick the .cue file.")
@@ -278,7 +323,8 @@ fun gameAssets(source: GameSource, title: String, embed: Boolean, emulators: Lis
     if (emulators.isNotEmpty()) json.put("external", JSONArray(emulators.map { it.toJson() }))
     val assets = mutableListOf<ApkPatcher.Asset>()
 
-    if (!embed) {
+    // Juegos de carpeta: el juego son todos los archivos junto al .exe / .html, asi que siempre se juega donde esta.
+    if (!embed || source.system.folderGame) {
         json.put("rom", source.file.absolutePath).put("linked", true).put("files", JSONArray())
     } else {
         when (source) {

@@ -230,9 +230,11 @@ class ConvertActivity : GamepadActivity() {
 
     private fun applyStorageDefault() {
         val external = source.system.isExternal
+        val folder = source.system.folderGame
         linkRadio.isEnabled = source.canLink && external
         // External emulators read the file in place; PS2 images are too big to bundle anyway.
-        embedRadio.isEnabled = !external
+        // Folder games (RPG Maker) need every file next to the .exe / .html, so they always play in place.
+        embedRadio.isEnabled = !external && !folder
         val link = source.canLink
         (if (link) linkRadio else embedRadio).isChecked = true
 
@@ -276,6 +278,9 @@ class ConvertActivity : GamepadActivity() {
                 lines += "Opens in ${installedEmulators.getOrNull(emulatorSpinner.selectedItemPosition)?.name ?: installedEmulators.first().name}. " +
                     "The game app asks once for file access, then hands the file over."
             }
+        } else if (source.system.folderGame) {
+            lines += "El juego se lee desde su carpeta (${romFile.parentFile?.name ?: "?"}): no la muevas ni la borres. " +
+                "La app pide permiso de archivos la primera vez."
         } else if (embedRadio.isChecked) {
             val need = Converter.spaceNeeded(source, true)
             val free = Converter.freeSpace(this)
@@ -343,7 +348,7 @@ class ConvertActivity : GamepadActivity() {
         if (value) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         listOf(titleInput, systemSpinner, emulatorSpinner, convertButton).forEach { it.isEnabled = !value }
-        embedRadio.isEnabled = !value && !source.system.isExternal
+        embedRadio.isEnabled = !value && !source.system.isExternal && !source.system.folderGame
         linkRadio.isEnabled = !value && source.canLink && source.system.isExternal
         if (value) {
             doneRow.visibility = View.GONE

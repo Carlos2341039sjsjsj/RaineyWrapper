@@ -203,7 +203,14 @@
     "rpgmv": {
       "name": "Juego web (RPG Maker MV/MZ)",
       "extensions": ["html"],
-      "folders": ["rpgmaker", "rpgmv", "rpgmz", "pc"]
+      "folders": ["rpgmaker", "rpgmv", "rpgmz", "pc"],
+      "folderGame": true
+    },
+    "rgss3": {
+      "name": "RPG Maker VX Ace (RGSS3)",
+      "extensions": ["exe"],
+      "folders": ["rpgmaker", "rpgmvx", "rpgmvxace", "vxace", "pc"],
+      "folderGame": true
     }
   }
 }

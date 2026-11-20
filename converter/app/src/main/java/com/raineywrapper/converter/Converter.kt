@@ -29,7 +29,7 @@ object Converter {
 
     /** Rough free space the conversion needs: the unsigned and signed APKs exist briefly side by side. */
     fun spaceNeeded(source: GameSource, embed: Boolean): Long {
-        if (!embed) return MARGIN
+        if (!embed || source.system.folderGame) return MARGIN
         val rom = when (source) {
             is GameSource.Zipped -> source.entrySize
             is GameSource.Sheet -> source.tracks.sumOf { it.second.length() }
