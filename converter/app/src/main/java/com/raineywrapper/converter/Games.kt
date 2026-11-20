@@ -154,7 +154,8 @@ sealed class GameSource(val file: File, val system: GameSystem) {
     open val canLink get() = true
 
     class Single(file: File, system: GameSystem) : GameSource(file, system) {
-        override val displayName get() = file.name
+        // Juego web: el nombre es el de su carpeta (el archivo siempre se llama index.html).
+        override val displayName get() = if (system.id == "rpgmv") (file.parentFile?.name ?: "game") + ".html" else file.name
     }
 
     class Zipped(file: File, system: GameSystem, val entryName: String, val entrySize: Long) : GameSource(file, system) {
@@ -187,6 +188,9 @@ sealed class GameSource(val file: File, val system: GameSystem) {
         private fun resolveZip(context: Context, file: File, systemOverride: GameSystem?): GameSource {
             ZipFile(file).use { zip ->
                 val entries = zip.entries().asSequence().filter { !it.isDirectory }.toList()
+                if (entries.any { File(it.name).name.equals("index.html", ignoreCase = true) }) {
+                    throw UserError("${file.name} es un juego web (RPG Maker MV/MZ).\n\nDescomprimelo primero y elegi su archivo index.html.")
+                }
                 if (entries.any { File(it.name).ext == "cue" }) {
                     throw UserError("${file.name} contains a disc image (.cue).\n\nUnzip it first, then pick the .cue file.")
                 }

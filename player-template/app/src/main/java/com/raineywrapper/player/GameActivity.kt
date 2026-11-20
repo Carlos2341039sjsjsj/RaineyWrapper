@@ -77,6 +77,7 @@ class GameActivity : ComponentActivity() {
     }
 
     private lateinit var container: FrameLayout
+    private var redirected = false
     private lateinit var config: GameConfig
     private lateinit var saves: SaveStore
     private lateinit var menu: GameMenu
@@ -119,6 +120,14 @@ class GameActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Juegos web (RPG Maker MV/MZ): los abre otra pantalla, sin nucleo libretro.
+        val isWeb = try { GameConfig.load(this).system == "rpgmv" } catch (e: Exception) { false }
+        if (isWeb) {
+            redirected = true
+            startActivity(Intent(this, WebGameActivity::class.java))
+            finish()
+            return
+        }
         installCrashLog()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         preferSixtyHz()
@@ -157,7 +166,7 @@ class GameActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (retroView == null && !starting) prepareAndStart()
+        if (!redirected && retroView == null && !starting) prepareAndStart()
     }
 
     private fun prepareAndStart() {

@@ -199,6 +199,11 @@
       "core": "mednafen_ngp",
       "extensions": ["ngp", "ngc"],
       "folders": ["ngp", "neogeopocket"]
+    },
+    "rpgmv": {
+      "name": "Juego web (RPG Maker MV/MZ)",
+      "extensions": ["html"],
+      "folders": ["rpgmaker", "rpgmv", "rpgmz", "pc"]
     }
   }
 }

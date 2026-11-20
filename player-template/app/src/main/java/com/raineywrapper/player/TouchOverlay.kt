@@ -62,6 +62,16 @@ class TouchOverlay(
             "nes", "lynx", "ngp" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), emptyList())
             "pce" -> Layout(listOf(Face("II", B, -0.45f, 0.25f), Face("I", A, 0.45f, -0.25f)), emptyList())
             "atari2600" -> Layout(listOf(Face("FIRE", B, 0f, 0f)), emptyList())
+            // RPG Maker MV/MZ en un WebView: Z = aceptar, X = cancelar, SHIFT = correr, CTRL = saltar texto.
+            "rpgmv" -> Layout(
+                listOf(Face("Z", KeyEvent.KEYCODE_Z, 0.45f, -0.25f), Face("X", KeyEvent.KEYCODE_X, -0.45f, 0.25f)),
+                listOf(
+                    "Q" to KeyEvent.KEYCODE_Q, "W" to KeyEvent.KEYCODE_W,
+                    "SHIFT" to KeyEvent.KEYCODE_SHIFT_LEFT, "CTRL" to KeyEvent.KEYCODE_CTRL_LEFT,
+                ),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
+            )
             "gba" -> Layout(listOf(Face("B", B, -0.45f, 0.25f), Face("A", A, 0.45f, -0.25f)), listOf("L" to L, "R" to R))
             "gb", "gb2", "sms", "gg" -> Layout(listOf(Face(if (system == "gb" || system == "gb2") "B" else "1", B, -0.45f, 0.25f), Face(if (system == "gb" || system == "gb2") "A" else "2", A, 0.45f, -0.25f)), emptyList())
             // Genesis Plus GX: RetroPad Y/B/A = Genesis A/B/C, Select = Mode.

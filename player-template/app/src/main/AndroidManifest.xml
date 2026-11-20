@@ -36,6 +36,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".WebGameActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"
