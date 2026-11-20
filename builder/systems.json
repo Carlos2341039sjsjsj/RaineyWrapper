@@ -211,6 +211,12 @@
       "extensions": ["exe"],
       "folders": ["rpgmaker", "rpgmvx", "rpgmvxace", "vxace", "pc"],
       "folderGame": true
+    },
+    "gamemaker": {
+      "name": "Juego de PC (GameMaker, data.win)",
+      "extensions": ["exe"],
+      "folders": ["gamemaker", "pc", "windows"],
+      "folderGame": true
     }
   }
 }

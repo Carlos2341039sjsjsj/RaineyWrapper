@@ -112,8 +112,8 @@ def pick_system(systems: dict, ext: str, path: Path) -> dict:
     if system["core"] is None and not system["external"]:
         # Juegos de carpeta (RPG Maker MV/MZ y VX Ace): no usan un core libretro.
         raise BuildError(
-            f"{path.name}: {system['name']} games are converted with the RaineyWrapper app on the device, "
-            "not with the command-line builder."
+            f"{path.name}: folder-based games (RPG Maker VX Ace / MV / MZ, GameMaker) are converted with the "
+            "RaineyWrapper app on the device, not with the command-line builder."
         )
     if system["external"]:
         raise BuildError(

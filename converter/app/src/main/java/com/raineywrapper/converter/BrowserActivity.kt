@@ -165,8 +165,8 @@ class BrowserActivity : GamepadActivity() {
         val cueStems = children.filter { it.ext == "cue" }.map { it.nameWithoutExtension.lowercase() }.toSet()
         val files = children
             .filter { it.isFile && it.ext in allowed }
-            // .exe solo cuenta si es el de un juego de RPG Maker VX Ace (con su .ini y su .rgss3a al lado).
-            .filter { pickImage || it.ext != "exe" || Rgss3.isGameExe(it) }
+            // .exe solo cuenta si es el de un juego de RPG Maker VX Ace o de GameMaker (se ve por los archivos de al lado).
+            .filter { pickImage || it.ext != "exe" || systemIdForExe(it) != null }
             .filterNot { it.ext in setOf("bin", "img", "iso") && it.nameWithoutExtension.lowercase() in cueStems }
             .sortedBy { it.name.lowercase() }
 

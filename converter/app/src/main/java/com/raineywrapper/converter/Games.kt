@@ -172,6 +172,26 @@ object Rgss3 {
     }
 }
 
+/**
+ * Juegos de PC hechos con GameMaker (Touhou Luna Nights y similares): `juego.exe` es solo el
+ * runner de Windows y el juego es `data.win` (con `data/` o los .ogg al lado).
+ */
+object GameMakerPc {
+    fun isGameExe(exe: File): Boolean {
+        if (exe.ext != "exe") return false
+        return exe.parentFile?.listFiles()?.any { it.isFile && it.name.equals("data.win", ignoreCase = true) } == true
+    }
+
+    fun looksLikeGame(entryNames: List<String>): Boolean = entryNames.any { File(it).name.equals("data.win", ignoreCase = true) }
+}
+
+/** Id del sistema de un .exe segun los archivos que tiene al lado, o null si no es un juego conocido. */
+fun systemIdForExe(exe: File): String? = when {
+    Rgss3.isGameExe(exe) -> "rgss3"
+    GameMakerPc.isGameExe(exe) -> "gamemaker"
+    else -> null
+}
+
 /** Track files that only make sense together with a .cue sheet. */
 private val TRACK_EXTENSIONS = setOf("bin", "img", "iso", "wav")
 /** Already-compressed formats; deflating them again only costs time. */
@@ -212,15 +232,20 @@ sealed class GameSource(val file: File, val system: GameSystem) {
             if (ext in TRACK_EXTENSIONS && cue.exists()) {
                 throw UserError("${file.name} is one track of a disc.\n\nPick ${cue.name} instead.")
             }
-            // Un .exe suelto no es un juego: solo vale el de RPG Maker VX Ace, que lleva su .ini y su .rgss3a al lado.
-            if (ext == "exe" && !Rgss3.isGameExe(file)) {
+            // Un .exe suelto no es un juego: solo valen los de RPG Maker VX Ace (con su .ini y su .rgss3a al lado)
+            // y los de GameMaker (con su data.win). El tipo lo dicen los archivos, no la carpeta.
+            val exeSystemId = if (ext == "exe") systemIdForExe(file) else null
+            if (ext == "exe" && exeSystemId == null) {
                 throw UserError(
-                    "${file.name} no parece un juego de RPG Maker VX Ace.\n\n" +
-                        "Tiene que estar en la carpeta del juego, junto a su .ini (${file.nameWithoutExtension}.ini) " +
-                        "y a su archivo .rgss3a (o a la carpeta Data con Scripts.rvdata2).",
+                    "${file.name} no parece un juego compatible.\n\n" +
+                        "RPG Maker VX Ace: tiene que estar junto a ${file.nameWithoutExtension}.ini y a su .rgss3a " +
+                        "(o a Data/Scripts.rvdata2).\n" +
+                        "GameMaker: tiene que estar junto a data.win.",
                 )
             }
-            val system = systemOverride ?: Systems.forFile(context, ext, file)
+            val system = systemOverride
+                ?: exeSystemId?.let { id -> Systems.all(context).firstOrNull { it.id == id } }
+                ?: Systems.forFile(context, ext, file)
                 ?: throw UserError("${file.name}: .$ext files aren't supported.")
             if (ext == "cue") return Sheet(file, system, parseSheet(file, CUE_FILES))
             if (ext == "gdi") return Sheet(file, system, parseSheet(file, GDI_FILES))
@@ -235,6 +260,9 @@ sealed class GameSource(val file: File, val system: GameSystem) {
                 }
                 if (Rgss3.looksLikeGame(entries.map { it.name })) {
                     throw UserError("${file.name} es un juego de RPG Maker VX Ace.\n\nDescomprimelo primero y elegi su archivo Game.exe.")
+                }
+                if (GameMakerPc.looksLikeGame(entries.map { it.name })) {
+                    throw UserError("${file.name} es un juego de PC (GameMaker).\n\nDescomprimelo primero y elegi su .exe.")
                 }
                 if (entries.any { File(it.name).ext == "cue" }) {
                     throw UserError("${file.name} contains a disc image (.cue).\n\nUnzip it first, then pick the .cue file.")
