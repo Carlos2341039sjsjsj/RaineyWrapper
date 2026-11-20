@@ -574,7 +574,7 @@ def build_converter(tc: Toolchain, do_install: bool, public: bool = False) -> Pa
     keys = ensure_keystore(tc)
     log("Building the RaineyWrapper converter app...")
     cmd = [str(CONVERTER / "gradlew"), ":app:assembleRelease", "--console=plain", "-q",
-           f"-PraineywrapperVersionCode={version_code_now()}"] + signing_args(keys)
+           f"-PraineywrapperVersionCode={version_code_now()}", "--no-daemon"] + signing_args(keys)
     result = subprocess.run(cmd, cwd=CONVERTER, env=gradle_env(tc, keys), capture_output=True, text=True)
     if result.returncode != 0:
         tail = "\n".join((result.stdout + result.stderr).strip().splitlines()[-40:])
