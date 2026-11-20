@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.StatFs
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
@@ -19,6 +20,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
@@ -40,6 +42,9 @@ class WebGameActivity : ComponentActivity() {
     private var root: File? = null
     private var indexName = "index.html"
     private var dialog: AlertDialog? = null
+    private val prefs get() = getSharedPreferences("web_game", MODE_PRIVATE)
+
+    private fun isMoved() = prefs.getString(KEY_MOVED, null)?.let { File(it, indexName).isFile } == true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,8 +54,9 @@ class WebGameActivity : ComponentActivity() {
         enterImmersiveMode()
         config = GameConfig.load(this)
         val index = File(config.rom)
-        root = index.parentFile
         indexName = index.name
+        val moved = prefs.getString(KEY_MOVED, null)?.let { File(it) }?.takeIf { File(it, indexName).isFile }
+        root = moved ?: index.parentFile
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = showMenu()
         })
@@ -60,7 +66,7 @@ class WebGameActivity : ComponentActivity() {
         super.onResume()
         web?.let { it.onResume(); return }
         if (dialog?.isShowing == true) return
-        if (!Environment.isExternalStorageManager()) {
+        if (!isMoved() && !Environment.isExternalStorageManager()) {
             dialog = AlertDialog.Builder(this)
                 .setTitle(config.title)
                 .setMessage("Este juego se lee desde la memoria del telefono, asi que necesita permiso para acceder a los archivos.")
@@ -71,7 +77,7 @@ class WebGameActivity : ComponentActivity() {
                 .show()
             return
         }
-        if (!File(config.rom).isFile) {
+        if (root?.let { File(it, indexName).isFile } != true) {
             dialog = AlertDialog.Builder(this)
                 .setTitle(config.title)
                 .setMessage("No se encuentra el juego:\n${config.rom}\n\nSi lo moviste o lo borraste, vuelve a convertirlo.")
@@ -162,18 +168,89 @@ class WebGameActivity : ComponentActivity() {
     private fun showMenu() {
         if (dialog?.isShowing == true) return
         val controls = overlay?.visibility == View.VISIBLE
+        val canMove = !isMoved()
+        val labels = mutableListOf("Continuar", "Controles en pantalla: " + (if (controls) "si" else "no"), "Recargar el juego")
+        if (canMove) labels += "Mover el juego dentro de la app (borrar el original)"
+        labels += "Salir"
         dialog = AlertDialog.Builder(this)
             .setTitle(config.title)
-            .setItems(
-                arrayOf("Continuar", "Controles en pantalla: " + (if (controls) "si" else "no"), "Recargar el juego", "Salir"),
-            ) { _, which ->
-                when (which) {
-                    1 -> overlay?.visibility = if (controls) View.GONE else View.VISIBLE
-                    2 -> web?.reload()
-                    3 -> finishAffinity()
+            .setItems(labels.toTypedArray()) { _, which ->
+                when {
+                    which == 1 -> overlay?.visibility = if (controls) View.GONE else View.VISIBLE
+                    which == 2 -> web?.reload()
+                    canMove && which == 3 -> confirmMove()
+                    which == labels.lastIndex -> finishAffinity()
                 }
             }
             .show()
+    }
+
+    /** Solo se mueve una carpeta que parezca un juego, nunca la memoria entera ni Descargas. */
+    private fun isSafeToMove(src: File): Boolean {
+        val p = src.absolutePath
+        val storage = Environment.getExternalStorageDirectory().absolutePath
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath
+        return p != storage && p != downloads && src.parentFile != null && File(src, indexName).isFile && File(src, "data").isDirectory
+    }
+
+    private fun folderSize(dir: File): Long = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    private fun fileCount(dir: File): Int = dir.walkTopDown().count { it.isFile }
+
+    private fun confirmMove() {
+        val src = root ?: return
+        if (!isSafeToMove(src)) {
+            Toast.makeText(this, "Esta carpeta no se puede mover de forma segura.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val mb = folderSize(src) shr 20
+        dialog = AlertDialog.Builder(this)
+            .setTitle("Mover el juego")
+            .setMessage(
+                "Se copia la carpeta del juego ($mb MB) dentro de la app y despues se borra la original:\n${src.absolutePath}\n\n" +
+                    "Queda una sola copia. Si desinstalas la app, el juego se borra con ella. " +
+                    "Si todavia tenes el .zip, borralo a mano para liberar mas espacio.",
+            )
+            .setPositiveButton("Mover y borrar") { _, _ -> doMove(src) }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun doMove(src: File) {
+        val need = folderSize(src)
+        if (StatFs(filesDir.absolutePath).availableBytes < need + (50L shl 20)) {
+            Toast.makeText(this, "No hay espacio libre suficiente para copiar el juego.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val dest = File(filesDir, "webgame")
+        val progress = AlertDialog.Builder(this)
+            .setTitle("Moviendo el juego")
+            .setMessage("No cierres la app hasta que termine.")
+            .setCancelable(false)
+            .show()
+        Thread {
+            val result = try {
+                dest.deleteRecursively()
+                src.copyRecursively(dest, overwrite = true)
+                if (fileCount(src) != fileCount(dest) || folderSize(src) != folderSize(dest)) {
+                    dest.deleteRecursively()
+                    "La copia no coincide con el original. No se borro nada."
+                } else {
+                    prefs.edit().putString(KEY_MOVED, dest.absolutePath).commit()
+                    if (src.deleteRecursively()) "OK" else "OK: no se pudo borrar todo el original, revisalo a mano."
+                }
+            } catch (e: Exception) {
+                dest.deleteRecursively()
+                "Error al mover el juego: ${e.message}"
+            }
+            runOnUiThread {
+                progress.dismiss()
+                if (result.startsWith("OK")) {
+                    root = dest
+                    web?.reload()
+                }
+                Toast.makeText(this, if (result == "OK") "Listo: el juego esta dentro de la app." else result, Toast.LENGTH_LONG).show()
+            }
+        }.start()
     }
 
     private fun enterImmersiveMode() {
@@ -186,6 +263,7 @@ class WebGameActivity : ComponentActivity() {
 
     private companion object {
         const val HOST = "rainey.game"
+        const val KEY_MOVED = "moved_root"
         val MIME = mapOf(
             "js" to "text/javascript", "json" to "application/json", "wasm" to "application/wasm",
             "ogg" to "audio/ogg", "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav",
