@@ -542,7 +542,7 @@ class GameActivity : ComponentActivity() {
             setLite(!liteMode())
             Toast.makeText(this, "Reinicia el juego para aplicar", Toast.LENGTH_LONG).show()
             menu.refresh()
-        }.takeIf { config.system in listOf("psp", "wii", "gamecube", "gc") },
+        }.takeIf { config.system in listOf("psp", "wii", "gamecube", "gc", "3ds") },
         GameMenu.Item({ "Controllers: " + listOf("1 player", "Pads = P1, P2...", "Touch = P1, pads = P2...")[padModeLevel()] }) {
             prefs().edit().putInt(PREF_PAD_MODE, (padModeLevel() + 1) % 3).apply()
             gamepad?.let { it.padMode = padModeLevel(); it.resetPorts() }
@@ -712,6 +712,7 @@ class GameActivity : ComponentActivity() {
     private fun setLite(on: Boolean) {
         val e = prefs().edit().putBoolean(PREF_LITE, on)
         if (config.system == "psp") e.putInt(PREF_PSP_GFX, if (on) 1 else 0)
+        else if (config.system == "3ds") e.putBoolean(PREF_3DS_PERF, on).putInt(PREF_3DS_RES, 0)
         else e.putInt(PREF_DOLPHIN_OPT, if (on) 0 else 1)
         if (on) e.putInt(PREF_RESOLUTION, 0)
         e.commit()
@@ -719,7 +720,7 @@ class GameActivity : ComponentActivity() {
 
     /** Primera vez: si la GPU es floja, ofrece el modo ligero. PSP solo en GPU basica; GameCube/Wii tambien en media. */
     private fun offerLiteMode() {
-        if (config.system !in listOf("psp", "wii", "gamecube", "gc")) return
+        if (config.system !in listOf("psp", "wii", "gamecube", "gc", "3ds")) return
         if (prefs().getBoolean(PREF_LITE_ASKED, false)) return
         lifecycleScope.launch {
             val gpu = withContext(Dispatchers.Default) { DeviceProfile.gpuName() }
@@ -736,7 +737,11 @@ class GameActivity : ComponentActivity() {
 
     private fun showLiteDialog(gpu: String?, tier: Int) {
         val gpuText = if (gpu.isNullOrBlank()) "tu GPU" else "$gpu (${DeviceProfile.tierName(tier)})"
-        val details = if (config.system == "psp") {
+        val details = if (config.system == "3ds") {
+            "- Resolucion interna 1x (nativa)\n" +
+                "- Rendimiento alto (menos precision en el GPU, puede haber pequenos fallos graficos)\n" +
+                "- La 3DS es muy exigente: aun asi puede no ir fluido en juegos pesados\n\n"
+        } else if (config.system == "psp") {
             "- Graficos PSP: Rendimiento (salto de cuadros automatico, sin lecturas de GPU)\n" +
                 "- Resolucion interna 1x (480x272)\n\n"
         } else {
