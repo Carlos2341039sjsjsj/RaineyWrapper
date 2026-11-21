@@ -271,6 +271,13 @@ sealed class GameSource(val file: File, val system: GameSystem) {
         fun resolve(context: Context, file: File, systemOverride: GameSystem? = null): GameSource {
             if (!file.canRead()) throw UserError("Can't read ${file.name}.")
             val ext = file.ext
+            if (ext == "exe" || ext == "msi" || ext == "bat") {
+                throw UserError(
+                    "${file.name} es un programa de Windows (.$ext) y no se puede abrir en el celular.\n\n" +
+                        "Solo se leen juegos web de RPG Maker MV/MZ (index.html) y de RPG Maker 2000/2003 (RPG_RT.ldb). " +
+                        "Si tu juego es otro, busca una version para Android.",
+                )
+            }
             if (ext == "zip") return resolveZip(context, file, systemOverride)
 
             val cue = File(file.parentFile, file.nameWithoutExtension + ".cue")
@@ -307,6 +314,9 @@ sealed class GameSource(val file: File, val system: GameSystem) {
                 ?: exeSystemId?.let { id -> Systems.all(context).firstOrNull { it.id == id } }
                 ?: Systems.forFile(context, ext, file)
                 ?: throw UserError("${file.name}: .$ext files aren't supported.")
+            if (system.id == "rpgmv" && ext != "html" && ext != "htm") {
+                throw UserError("Para este tipo de juego elegi el archivo index.html de su carpeta, no ${file.name}.")
+            }
             if (ext == "cue") return Sheet(file, system, parseSheet(file, CUE_FILES))
             if (ext == "gdi") return Sheet(file, system, parseSheet(file, GDI_FILES))
             return Single(file, system)
