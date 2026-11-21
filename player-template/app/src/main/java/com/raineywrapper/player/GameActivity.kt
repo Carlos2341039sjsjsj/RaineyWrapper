@@ -119,6 +119,7 @@ class GameActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        try { System.loadLibrary("c++_shared") } catch (e: Throwable) { android.util.Log.w("Rainey", "c++_shared no cargo: $e") }
         super.onCreate(savedInstanceState)
         CrashLogger.install(this)
         // Juegos web (RPG Maker MV/MZ): los abre otra pantalla, sin nucleo libretro.
@@ -142,6 +143,8 @@ class GameActivity : ComponentActivity() {
         PpssppMultiplayer.customIp = prefs().getString(PREF_MP_IP, null)
         PpssppMultiplayer.mac = prefs().getString(PREF_MP_MAC, null) ?: newMac()
         revertFailedBackendTrial()
+        revertFailedAzaharTrial()
+        markAzaharTrial()
         menu = GameMenu(this, config.title).apply { setItems(menuItems()) }
     }
 
@@ -360,6 +363,7 @@ class GameActivity : ComponentActivity() {
         )
         // TGB Dual: emulate two Game Boys side by side, linked by cable (restart to apply).
         "gb2" -> arrayOf(Variable("tgbdual_gblink_enable", "enabled"))
+        "3ds" -> azaharVariables()
         // melonDS: renderizador de software en su propio hilo y compilador JIT (nombres comprobados con
         // `strings`; los valores "enabled" siguen la convencion de libretro y no estan verificados).
         "nds" -> arrayOf(
@@ -536,6 +540,11 @@ class GameActivity : ComponentActivity() {
             gamepad?.let { it.padMode = padModeLevel(); it.resetPorts() }
             menu.refresh()
         }.takeIf { config.system in listOf("n64", "gb2") },
+        GameMenu.Item({ "3DS renderer: " + azaharApiLabel() }) {
+            prefs().edit().putInt(PREF_3DS_API, (azaharApi() + 1) % 4).apply()
+            menu.refresh()
+            Toast.makeText(this, "Reinicia el juego para aplicar el renderizador", Toast.LENGTH_SHORT).show()
+        }.takeIf { config.system == "3ds" },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
             menu.refresh()
@@ -619,6 +628,36 @@ class GameActivity : ComponentActivity() {
 
     /** DS y 3DS: dos pantallas apiladas, la de abajo es tactil. */
     private fun isDualScreen() = config.system == "nds" || config.system == "3ds"
+
+    /** 0 = Auto, 1 = OpenGL, 2 = Vulkan, 3 = Software (citra_graphics_api). */
+    private fun azaharApi() = prefs().getInt(PREF_3DS_API, 0).coerceIn(0, 3)
+
+    private fun azaharApiLabel() = when (azaharApi()) {
+        1 -> "OpenGL"
+        2 -> "Vulkan"
+        3 -> "Software"
+        else -> "Auto"
+    }
+
+    private fun azaharVariables(): Array<Variable> = when (azaharApi()) {
+        1 -> arrayOf(Variable("citra_graphics_api", "OpenGL"))
+        2 -> arrayOf(Variable("citra_graphics_api", "Vulkan"))
+        3 -> arrayOf(Variable("citra_graphics_api", "Software"))
+        else -> emptyArray()
+    }
+
+    /** Con un renderizador distinto de Auto: si la app muere antes de 15 s, el proximo arranque vuelve a Auto. */
+    private fun markAzaharTrial() {
+        if (config.system != "3ds" || azaharApi() == 0) return
+        prefs().edit().putBoolean(PREF_3DS_TRIAL, true).commit()
+        container.postDelayed({ prefs().edit().putBoolean(PREF_3DS_TRIAL, false).apply() }, 15_000L)
+    }
+
+    private fun revertFailedAzaharTrial() {
+        if (!prefs().getBoolean(PREF_3DS_TRIAL, false)) return
+        prefs().edit().putBoolean(PREF_3DS_TRIAL, false).putInt(PREF_3DS_API, 0).commit()
+        Toast.makeText(this, "El renderizador elegido no arranco. Volvi a Auto.", Toast.LENGTH_LONG).show()
+    }
 
     /** Modo ligero = presets de rendimiento ya existentes: PSP "Rendimiento" o Dolphin "Rendimiento", resolucion 1x. */
     private fun setLite(on: Boolean) {
