@@ -563,6 +563,12 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_3DS_RES, (azaharRes() + 1) % 4).commit()
             restartGame()
         }.takeIf { config.system == "3ds" },
+        GameMenu.Item({
+            "3DS texturas: " + listOf("normal", "ScaleForce (suave)", "xBRZ (pesado)", "Bicubic")[azaharTex()]
+        }) {
+            prefs().edit().putInt(PREF_3DS_TEX, (azaharTex() + 1) % 4).commit()
+            restartGame()
+        }.takeIf { config.system == "3ds" },
         GameMenu.Item({ "3DS rendimiento: " + (if (prefs().getBoolean(PREF_3DS_PERF, false)) "alto" else "normal") }) {
             prefs().edit().putBoolean(PREF_3DS_PERF, !prefs().getBoolean(PREF_3DS_PERF, false)).commit()
             restartGame()
@@ -670,6 +676,16 @@ class GameActivity : ComponentActivity() {
         else -> emptyArray()
     }
 
+    private fun azaharTex() = prefs().getInt(PREF_3DS_TEX, 0).coerceIn(0, 3)
+
+    /** Valor de citra_texture_filter (null = no tocar la opcion). */
+    private fun azaharTexLabel(): String? = when (azaharTex()) {
+        1 -> "ScaleForce"
+        2 -> "xBRZ"
+        3 -> "Bicubic"
+        else -> null
+    }
+
     private fun azaharRes() = prefs().getInt(PREF_3DS_RES, 0).coerceIn(0, 3)
 
     private fun azaharResLabel() = if (azaharRes() == 0) "1x (Native)" else "${azaharRes() + 1}x"
@@ -683,13 +699,14 @@ class GameActivity : ComponentActivity() {
         val v = mutableListOf(
             Variable("citra_layout_option", if (dsLandscape()) "Side by Side" else "Default Top-Bottom Screen"),
         )
+        v += Variable("citra_use_disk_shader_cache", "enabled")
+        azaharTexLabel()?.let { v += Variable("citra_texture_filter", it) }
         val perf = prefs().getBoolean(PREF_3DS_PERF, false)
         v += Variable("citra_resolution_factor", if (perf) "1x (Native)" else azaharResLabel())
         if (perf) {
             v += Variable("citra_use_cpu_jit", "enabled")
             v += Variable("citra_use_shader_jit", "enabled")
-            v += Variable("citra_use_hw_shader_cache", "enabled")
-            v += Variable("citra_use_acc_mul", "disabled")
+            v += Variable("citra_shaders_accurate_mul", "disabled")
         }
         return v.toTypedArray()
     }

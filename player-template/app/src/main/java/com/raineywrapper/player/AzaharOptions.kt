@@ -12,3 +12,6 @@ internal const val PREF_3DS_FLIP = "azahar_flip"
 
 // Resolucion interna de la 3DS: 0 = 1x (nativa), 1 = 2x, 2 = 3x, 3 = 4x.
 internal const val PREF_3DS_RES = "azahar_res"
+
+// Filtro de texturas de la 3DS: 0 = ninguno, 1 = ScaleForce, 2 = xBRZ, 3 = Bicubic.
+internal const val PREF_3DS_TEX = "azahar_tex"
