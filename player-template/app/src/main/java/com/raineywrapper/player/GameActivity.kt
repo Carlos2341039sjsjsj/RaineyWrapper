@@ -384,6 +384,9 @@ class GameActivity : ComponentActivity() {
             Variable("melonds_jit_fast_memory", "enabled"),
             Variable("melonds_jit_branch_optimisations", "enabled"),
             Variable("melonds_jit_literal_optimisations", "enabled"),
+            // Audio mas liviano: sin interpolacion y 10 bits (suena un poco mas seco, pero gasta menos CPU).
+            Variable("melonds_audio_interpolation", "None"),
+            Variable("melonds_audio_bitrate", "10-bit"),
         ) else emptyArray<Variable>())
         else -> emptyArray()
     }
