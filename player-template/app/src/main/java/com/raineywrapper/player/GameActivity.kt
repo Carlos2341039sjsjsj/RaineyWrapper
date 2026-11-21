@@ -569,6 +569,12 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_3DS_TEX, (azaharTex() + 1) % 4).commit()
             restartGame()
         }.takeIf { config.system == "3ds" },
+        GameMenu.Item({
+            "3DS audio: " + listOf("normal", "HLE (rapido)", "LLE (preciso)", "LLE multihilo")[azaharAudio()]
+        }) {
+            prefs().edit().putInt(PREF_3DS_AUDIO, (azaharAudio() + 1) % 4).commit()
+            restartGame()
+        }.takeIf { config.system == "3ds" },
         GameMenu.Item({ "3DS rendimiento: " + (if (prefs().getBoolean(PREF_3DS_PERF, false)) "alto" else "normal") }) {
             prefs().edit().putBoolean(PREF_3DS_PERF, !prefs().getBoolean(PREF_3DS_PERF, false)).commit()
             restartGame()
@@ -686,6 +692,16 @@ class GameActivity : ComponentActivity() {
         else -> null
     }
 
+    private fun azaharAudio() = prefs().getInt(PREF_3DS_AUDIO, 0).coerceIn(0, 3)
+
+    /** Valor de citra_audio_emulation (null = no tocar la opcion). */
+    private fun azaharAudioValue(): String? = when (azaharAudio()) {
+        1 -> "hle"
+        2 -> "lle"
+        3 -> "lle_multithread"
+        else -> null
+    }
+
     private fun azaharRes() = prefs().getInt(PREF_3DS_RES, 0).coerceIn(0, 3)
 
     private fun azaharResLabel() = if (azaharRes() == 0) "1x (Native)" else "${azaharRes() + 1}x"
@@ -701,6 +717,7 @@ class GameActivity : ComponentActivity() {
         )
         v += Variable("citra_use_disk_shader_cache", "enabled")
         azaharTexLabel()?.let { v += Variable("citra_texture_filter", it) }
+        azaharAudioValue()?.let { v += Variable("citra_audio_emulation", it) }
         val perf = prefs().getBoolean(PREF_3DS_PERF, false)
         v += Variable("citra_resolution_factor", if (perf) "1x (Native)" else azaharResLabel())
         if (perf) {

@@ -15,3 +15,6 @@ internal const val PREF_3DS_RES = "azahar_res"
 
 // Filtro de texturas de la 3DS: 0 = ninguno, 1 = ScaleForce, 2 = xBRZ, 3 = Bicubic.
 internal const val PREF_3DS_TEX = "azahar_tex"
+
+// Audio de la 3DS: 0 = normal (lo que decida el core), 1 = HLE (rapido), 2 = LLE (preciso), 3 = LLE multihilo.
+internal const val PREF_3DS_AUDIO = "azahar_audio"
