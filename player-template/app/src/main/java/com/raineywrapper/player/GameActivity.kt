@@ -247,6 +247,14 @@ class GameActivity : ComponentActivity() {
                 listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
+        // Imagen invertida (3DS): el codigo nativo lee esta variable al crear el video.
+        try {
+            android.system.Os.setenv(
+                "RAINEY_FLIP_Y",
+                if (config.system == "3ds" && prefs().getBoolean(PREF_3DS_FLIP, false)) "1" else "0",
+                true,
+            )
+        } catch (e: Exception) { }
         val view = GLRetroView(this, data)
         retroView = view
         gamepad = GamepadInput(view, config.system, startedWiiController)
@@ -544,6 +552,10 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_3DS_API, (azaharApi() + 1) % 4).apply()
             menu.refresh()
             Toast.makeText(this, "Reinicia el juego para aplicar el renderizador", Toast.LENGTH_SHORT).show()
+        }.takeIf { config.system == "3ds" },
+        GameMenu.Item({ "Invertir imagen: " + (if (prefs().getBoolean(PREF_3DS_FLIP, false)) "si" else "no") }) {
+            prefs().edit().putBoolean(PREF_3DS_FLIP, !prefs().getBoolean(PREF_3DS_FLIP, false)).commit()
+            restartGame()
         }.takeIf { config.system == "3ds" },
         GameMenu.Item({ "3DS rendimiento: " + (if (prefs().getBoolean(PREF_3DS_PERF, false)) "alto" else "normal") }) {
             prefs().edit().putBoolean(PREF_3DS_PERF, !prefs().getBoolean(PREF_3DS_PERF, false)).commit()

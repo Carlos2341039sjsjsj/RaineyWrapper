@@ -1,3 +1,5 @@
+#include <cstdlib>
+static bool raineyFlipY(bool bottomLeftOrigin);
 /*
  *     Copyright (C) 2019  Filippo Scognamiglio
  *
@@ -215,7 +217,7 @@ void LibretroDroid::onSurfaceCreated() {
     auto newVideo = new Video(
         renderingOptions,
         fragmentShaderConfig,
-        Environment::getInstance().isBottomLeftOrigin(),
+        raineyFlipY(Environment::getInstance().isBottomLeftOrigin()),
         Environment::getInstance().getScreenRotation(),
         skipDuplicateFrames,
         immersiveModeEnabled,
@@ -241,6 +243,13 @@ void LibretroDroid::onMotionEvent(
     if (input) {
         input->onMotionEvent(port, source, xAxis, yAxis);
     }
+}
+
+// RaineyWrapper: la app puede pedir la imagen invertida (RAINEY_FLIP_Y=1) para los cores que la
+// entregan boca abajo. Solo cambia como se dibuja; el toque se calcula aparte y no se afecta.
+static bool raineyFlipY(bool bottomLeftOrigin) {
+    const char* flag = getenv("RAINEY_FLIP_Y");
+    return (flag != nullptr && flag[0] == '1') ? !bottomLeftOrigin : bottomLeftOrigin;
 }
 
 void LibretroDroid::onTouchEvent(float xAxis, float yAxis) {
