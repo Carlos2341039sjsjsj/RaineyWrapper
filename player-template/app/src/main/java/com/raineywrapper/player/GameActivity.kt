@@ -529,7 +529,7 @@ class GameActivity : ComponentActivity() {
         GameMenu.Item({ "Pantallas DS: " + (if (dsLandscape()) "horizontal" else "vertical") }) {
             prefs().edit().putBoolean(PREF_DS_LAND, !dsLandscape()).commit()
             restartGame()
-        }.takeIf { config.system == "nds" },
+        }.takeIf { isDualScreen() },
         GameMenu.Item({ "Modo ligero: " + (if (liteMode()) "si" else "no") }) {
             setLite(!liteMode())
             Toast.makeText(this, "Reinicia el juego para aplicar", Toast.LENGTH_LONG).show()
@@ -544,6 +544,10 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_3DS_API, (azaharApi() + 1) % 4).apply()
             menu.refresh()
             Toast.makeText(this, "Reinicia el juego para aplicar el renderizador", Toast.LENGTH_SHORT).show()
+        }.takeIf { config.system == "3ds" },
+        GameMenu.Item({ "3DS rendimiento: " + (if (prefs().getBoolean(PREF_3DS_PERF, false)) "alto" else "normal") }) {
+            prefs().edit().putBoolean(PREF_3DS_PERF, !prefs().getBoolean(PREF_3DS_PERF, false)).commit()
+            restartGame()
         }.takeIf { config.system == "3ds" },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
@@ -639,11 +643,32 @@ class GameActivity : ComponentActivity() {
         else -> "Auto"
     }
 
-    private fun azaharVariables(): Array<Variable> = when (azaharApi()) {
+    private fun azaharVariables(): Array<Variable> = azaharExtra() + azaharApiVars()
+
+    private fun azaharApiVars(): Array<Variable> = when (azaharApi()) {
         1 -> arrayOf(Variable("citra_graphics_api", "OpenGL"))
         2 -> arrayOf(Variable("citra_graphics_api", "Vulkan"))
         3 -> arrayOf(Variable("citra_graphics_api", "Software"))
         else -> emptyArray()
+    }
+
+    /**
+     * Diseno de pantallas (lado a lado en horizontal) y, si se pidio, el preset de rendimiento.
+     * Los valores del diseno y la resolucion salen del core de Citra (`strings`); en Azahar pueden
+     * variar: si el core no reconoce un valor, lo ignora y queda el predeterminado.
+     */
+    private fun azaharExtra(): Array<Variable> {
+        val v = mutableListOf(
+            Variable("citra_layout_option", if (dsLandscape()) "Side by Side" else "Default Top-Bottom Screen"),
+        )
+        if (prefs().getBoolean(PREF_3DS_PERF, false)) {
+            v += Variable("citra_resolution_factor", "1x (Native)")
+            v += Variable("citra_use_cpu_jit", "enabled")
+            v += Variable("citra_use_shader_jit", "enabled")
+            v += Variable("citra_use_hw_shader_cache", "enabled")
+            v += Variable("citra_use_acc_mul", "disabled")
+        }
+        return v.toTypedArray()
     }
 
     /** Con un renderizador distinto de Auto: si la app muere antes de 15 s, el proximo arranque vuelve a Auto. */

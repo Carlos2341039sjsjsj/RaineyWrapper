@@ -22,6 +22,7 @@ import java.util.List;
 public class LibretroDroid {
 
     static {
+        System.loadLibrary("c++_shared");
         System.loadLibrary("libretrodroid");
     }
 
