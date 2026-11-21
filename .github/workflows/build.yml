@@ -24,6 +24,15 @@ jobs:
           "$SM" "build-tools;37.0.0" "ndk;29.0.14206865" "cmake;3.22.1"
       - name: Fetch cores
         run: cores/fetch_cores.sh mupen64plus_next_gles3 ppsspp dolphin mgba genesis_plus_gx tgbdual melonds fceumm pcsx_rearmed mednafen_pce_fast stella handy mednafen_ngp azahar
+      - name: libc++_shared (NDK)
+        # La libreria nativa del reproductor la necesita en tiempo de ejecucion; en tu telefono la copiaba
+        # fix_libcpp.py, pero esa copia local no se sube a GitHub (jniLibs no esta en git).
+        run: |
+          SRC=$(find "$ANDROID_HOME/ndk" -path "*aarch64-linux-android/libc++_shared.so" | head -1)
+          echo "libc++_shared: $SRC"
+          test -n "$SRC"
+          mkdir -p player-template/app/src/main/jniLibs/arm64-v8a
+          cp "$SRC" player-template/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
       - name: Doctor
         run: ./raineywrapper doctor
       - name: Build
