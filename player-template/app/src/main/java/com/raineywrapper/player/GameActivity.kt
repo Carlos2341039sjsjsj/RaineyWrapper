@@ -557,6 +557,13 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putBoolean(PREF_3DS_FLIP, !prefs().getBoolean(PREF_3DS_FLIP, false)).commit()
             restartGame()
         }.takeIf { config.system == "3ds" },
+        GameMenu.Item({
+            "3DS resolucion: " + (if (azaharRes() == 0) "1x (nativa)" else "${azaharRes() + 1}x") +
+                (if (prefs().getBoolean(PREF_3DS_PERF, false)) " (el modo alto fuerza 1x)" else "")
+        }) {
+            prefs().edit().putInt(PREF_3DS_RES, (azaharRes() + 1) % 4).commit()
+            restartGame()
+        }.takeIf { config.system == "3ds" },
         GameMenu.Item({ "3DS rendimiento: " + (if (prefs().getBoolean(PREF_3DS_PERF, false)) "alto" else "normal") }) {
             prefs().edit().putBoolean(PREF_3DS_PERF, !prefs().getBoolean(PREF_3DS_PERF, false)).commit()
             restartGame()
@@ -664,6 +671,10 @@ class GameActivity : ComponentActivity() {
         else -> emptyArray()
     }
 
+    private fun azaharRes() = prefs().getInt(PREF_3DS_RES, 0).coerceIn(0, 3)
+
+    private fun azaharResLabel() = if (azaharRes() == 0) "1x (Native)" else "${azaharRes() + 1}x"
+
     /**
      * Diseno de pantallas (lado a lado en horizontal) y, si se pidio, el preset de rendimiento.
      * Los valores del diseno y la resolucion salen del core de Citra (`strings`); en Azahar pueden
@@ -673,8 +684,9 @@ class GameActivity : ComponentActivity() {
         val v = mutableListOf(
             Variable("citra_layout_option", if (dsLandscape()) "Side by Side" else "Default Top-Bottom Screen"),
         )
-        if (prefs().getBoolean(PREF_3DS_PERF, false)) {
-            v += Variable("citra_resolution_factor", "1x (Native)")
+        val perf = prefs().getBoolean(PREF_3DS_PERF, false)
+        v += Variable("citra_resolution_factor", if (perf) "1x (Native)" else azaharResLabel())
+        if (perf) {
             v += Variable("citra_use_cpu_jit", "enabled")
             v += Variable("citra_use_shader_jit", "enabled")
             v += Variable("citra_use_hw_shader_cache", "enabled")
