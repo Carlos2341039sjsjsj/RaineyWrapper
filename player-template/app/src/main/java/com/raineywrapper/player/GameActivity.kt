@@ -222,8 +222,7 @@ class GameActivity : ComponentActivity() {
             currentRom = rom
             markBackendTrial()
             startEmulator(modFile() ?: rom, sram)
-            offerLiteMode()
-            offerMoveGame()
+            offerLiteMode { offerMoveGame() }
         }
     }
 
@@ -719,23 +718,27 @@ class GameActivity : ComponentActivity() {
     }
 
     /** Primera vez: si la GPU es floja, ofrece el modo ligero. PSP solo en GPU basica; GameCube/Wii tambien en media. */
-    private fun offerLiteMode() {
-        if (config.system !in listOf("psp", "wii", "gamecube", "gc", "3ds")) return
-        if (prefs().getBoolean(PREF_LITE_ASKED, false)) return
+    /** Evita ofrecer "Liberar espacio" justo antes de reiniciar por haber activado el modo ligero. */
+    private var liteRestarting = false
+
+    private fun offerLiteMode(next: () -> Unit) {
+        if (config.system !in listOf("psp", "wii", "gamecube", "gc", "3ds")) { next(); return }
+        if (prefs().getBoolean(PREF_LITE_ASKED, false)) { next(); return }
         lifecycleScope.launch {
             val gpu = withContext(Dispatchers.Default) { DeviceProfile.gpuName() }
             val tier = DeviceProfile.tier(gpu)
             val heavy = config.system != "psp"
             if (tier > 1 || (tier == 1 && !heavy)) {
                 prefs().edit().putBoolean(PREF_LITE_ASKED, true).apply()
+                next()
                 return@launch
             }
             if (isFinishing || isDestroyed) return@launch
-            showLiteDialog(gpu, tier)
+            showLiteDialog(gpu, tier, next)
         }
     }
 
-    private fun showLiteDialog(gpu: String?, tier: Int) {
+    private fun showLiteDialog(gpu: String?, tier: Int, next: () -> Unit) {
         val gpuText = if (gpu.isNullOrBlank()) "tu GPU" else "$gpu (${DeviceProfile.tierName(tier)})"
         val details = if (config.system == "3ds") {
             "- Resolucion interna 1x (nativa)\n" +
@@ -755,11 +758,13 @@ class GameActivity : ComponentActivity() {
             .setPositiveButton("Activar") { _, _ ->
                 setLite(true)
                 prefs().edit().putBoolean(PREF_LITE_ASKED, true).commit()
+                liteRestarting = true
                 restartGame()
             }
             .setNegativeButton("Ahora no") { _, _ -> prefs().edit().putBoolean(PREF_LITE_ASKED, true).apply() }
             .setNeutralButton("Ver que cambia", null)
             .setOnCancelListener { prefs().edit().putBoolean(PREF_LITE_ASKED, true).apply() }
+            .setOnDismissListener { if (!liteRestarting && !isFinishing && !isDestroyed) next() }
             .create()
         dialog.show()
         dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
@@ -884,6 +889,7 @@ class GameActivity : ComponentActivity() {
 
     /** First launch of a linked game: offer to keep a single copy inside the app. Asked once per source file. */
     private fun offerMoveGame() {
+        if (isFinishing || isDestroyed) return
         if (!canMoveGame()) return
         if (prefs().getString(PREF_ASKED_MOVE, null) == config.rom) return
         prefs().edit().putString(PREF_ASKED_MOVE, config.rom).apply()
@@ -1067,7 +1073,7 @@ class GameActivity : ComponentActivity() {
     private fun fpsCounterEnabled() = prefs().getBoolean(PREF_FPS, false)
 
     private fun screenFilter(): ScreenFilter =
-        prefs().getString(PREF_FILTER, null)?.let { name -> ScreenFilter.entries.firstOrNull { it.name == name } } ?: ScreenFilter.SHARP
+        prefs().getString(PREF_FILTER, null)?.let { name -> ScreenFilter.entries.firstOrNull { it.name == name } } ?: (if (config.system == "3ds") ScreenFilter.UPSCALE else ScreenFilter.SHARP)
 
     private fun wiiController(): WiiController =
         prefs().getString(PREF_WII_CONTROLLER, null)?.let { name -> WiiController.entries.firstOrNull { it.name == name } }
