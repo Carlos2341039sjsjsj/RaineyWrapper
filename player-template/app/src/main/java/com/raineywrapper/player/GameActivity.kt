@@ -585,6 +585,10 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_3DS_TEX, (azaharTex() + 1) % 4).commit()
             restartGame()
         }.takeIf { config.system == "3ds" },
+        GameMenu.Item({ "3DS reloj CPU: " + listOf("100% (normal)", "80%", "70%", "60%")[azaharClock()] }) {
+            prefs().edit().putInt(PREF_3DS_CLOCK, (azaharClock() + 1) % 4).commit()
+            restartGame()
+        }.takeIf { config.system == "3ds" },
         GameMenu.Item({ "3DS rendimiento: " + (if (prefs().getBoolean(PREF_3DS_PERF, false)) "alto" else "normal") }) {
             prefs().edit().putBoolean(PREF_3DS_PERF, !prefs().getBoolean(PREF_3DS_PERF, false)).commit()
             restartGame()
@@ -760,6 +764,11 @@ class GameActivity : ComponentActivity() {
 
     private fun azaharRes() = prefs().getInt(PREF_3DS_RES, 0).coerceIn(0, 3)
 
+    private fun azaharClock() = prefs().getInt(PREF_3DS_CLOCK, 0).coerceIn(0, 3)
+
+    /** null = el valor normal del nucleo (100%). */
+    private fun azaharClockValue(): String? = listOf(null, "80%", "70%", "60%")[azaharClock()]
+
     private fun azaharResLabel() = if (azaharRes() == 0) "1x (Native)" else "${azaharRes() + 1}x"
 
     /**
@@ -776,6 +785,7 @@ class GameActivity : ComponentActivity() {
         v += Variable("citra_audio_emulation", "hle")
         val perf = prefs().getBoolean(PREF_3DS_PERF, false)
         v += Variable("citra_resolution_factor", if (perf) "1x (Native)" else azaharResLabel())
+        azaharClockValue()?.let { v += Variable("citra_cpu_clock_percentage", it) }
         if (perf) {
             v += Variable("citra_use_cpu_jit", "enabled")
             v += Variable("citra_use_shader_jit", "enabled")
@@ -801,7 +811,7 @@ class GameActivity : ComponentActivity() {
     private fun setLite(on: Boolean) {
         val e = prefs().edit().putBoolean(PREF_LITE, on)
         if (config.system == "psp") e.putInt(PREF_PSP_GFX, if (on) 1 else 0)
-        else if (config.system == "3ds") e.putBoolean(PREF_3DS_PERF, on).putInt(PREF_3DS_RES, 0)
+        else if (config.system == "3ds") e.putBoolean(PREF_3DS_PERF, on).putInt(PREF_3DS_RES, 0).putInt(PREF_3DS_CLOCK, if (on) 1 else 0)
         else if (config.system == "nds") e.putBoolean(PREF_DS_PERF, on)
         else if (config.system == "n64") e.putInt(PREF_N64_OPT, if (on) 1 else 0)
         else e.putInt(PREF_DOLPHIN_OPT, if (on) 0 else 1)

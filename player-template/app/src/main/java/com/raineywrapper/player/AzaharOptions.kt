@@ -21,3 +21,6 @@ internal const val PREF_3DS_AUDIO = "azahar_audio"
 
 // Audio: 0 = automatico, 1 = baja latencia, 2 = estable (buffer mas grande, menos cortes).
 internal const val PREF_AUDIO_MODE = "audio_mode"
+
+// Reloj de la CPU emulada de la 3DS: 0 = 100% (normal), 1 = 80%, 2 = 70%, 3 = 60%. Menos = menos carga, juegos mas lentos si dependen de la CPU.
+internal const val PREF_3DS_CLOCK = "azahar_clock"
