@@ -151,7 +151,20 @@ class WebGameActivity : ComponentActivity() {
         if (uri.host != HOST) return null
         val base = root ?: return null
         val rel = Uri.decode(uri.encodedPath ?: "/").trimStart('/')
-        val file = File(base, rel.ifEmpty { indexName })
+        var file = File(base, rel.ifEmpty { indexName })
+        if (!file.isFile) {
+            val alt = when (file.extension.lowercase()) {
+                "m4a" -> "ogg"
+                "rpgmvm" -> "rpgmvo"
+                "ogg" -> "m4a"
+                "rpgmvo" -> "rpgmvm"
+                else -> null
+            }
+            if (alt != null) {
+                val other = File(file.parentFile, file.nameWithoutExtension + "." + alt)
+                if (other.isFile) file = other
+            }
+        }
         val ok = try {
             file.isFile && file.canonicalPath.startsWith(base.canonicalPath + File.separator)
         } catch (e: Exception) {
