@@ -90,6 +90,19 @@ object DolphinOptimize {
             off("dolphin_fast_depth_calculation"),
             off("dolphin_fast_texture_sampling"),
         )),
+        // Solo para GPU fuertes: Rendimiento + decodificar texturas en la GPU (puede fallar en algunos drivers).
+        ExtraLevel("Maximo", listOf(
+            Variable("dolphin_shader_compilation_mode", "Async (UberShaders)"),
+            on("dolphin_fastmem"),
+            on("dolphin_main_cpu_thread"),
+            on("dolphin_fast_depth_calculation"),
+            on("dolphin_fast_texture_sampling"),
+            on("dolphin_fast_disc_speed"),
+            on("dolphin_efb_to_texture"),
+            off("dolphin_main_accurate_cpu_cache"),
+            on("dolphin_dsp_hle"),
+            on("dolphin_gpu_texture_decoding"),
+        )),
     )
 }
 
@@ -145,5 +158,15 @@ object N64Options {
             v("EnableCopyDepthToRDRAM", "Off"))),
         ExtraLevel("Sin FB emulation", listOf(v("EnableFBEmulation", "False"))),
         ExtraLevel("Blending legacy", listOf(v("EnableLegacyBlending", "True"))),
+    )
+}
+
+// PSP: salto de cuadros. ppsspp_frameskip = numero de cuadros que salta (documentacion de libretro: 0 a 9);
+// con 1 se dibuja uno de cada dos (30 FPS) pero el juego sigue a velocidad completa.
+object PspFrameskip {
+    fun levels() = listOf(
+        ExtraLevel("Apagado", emptyList()),
+        ExtraLevel("30 FPS (salta 1)", listOf(Variable("ppsspp_frameskip", "1"))),
+        ExtraLevel("Automatico", listOf(Variable("ppsspp_auto_frameskip", "enabled"))),
     )
 }

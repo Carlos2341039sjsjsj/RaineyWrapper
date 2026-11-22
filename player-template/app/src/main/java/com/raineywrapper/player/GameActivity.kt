@@ -62,6 +62,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_PAD_MODE = "pad_mode"
         private const val PREF_MOD_PATH = "mod_path"
         private const val PREF_PSP_GFX = "psp_gfx_level"
+        private const val PREF_PSP_FS = "psp_frameskip_level"
         private const val PREF_N64_OPT = "n64_opt_level"
         private const val PREF_MOVED_PATH = "moved_path"
         private const val PREF_MOVED_FROM = "moved_from"
@@ -100,6 +101,7 @@ class GameActivity : ComponentActivity() {
     private var startedMultiplayer = 0
     private var startedDolphin = 1
     private var startedPspGfx = 0
+    private var startedPspFs = 0
     private var startedN64 = 0
     private var currentRom: File? = null
     private var startedPspBackend = 0
@@ -244,11 +246,12 @@ class GameActivity : ComponentActivity() {
         startedMultiplayer = multiplayerLevel()
         startedDolphin = dolphinLevel()
         startedPspGfx = pspGfxLevel()
+        startedPspFs = pspFsLevel()
         startedN64 = n64Level()
         startedPspBackend = pspBackend()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system == "n64") N64Options.levels().getOrNull(startedN64)?.variables.orEmpty() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system == "n64") N64Options.levels().getOrNull(startedN64)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PspFrameskip.levels().getOrNull(startedPspFs)?.variables.orEmpty() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         // Imagen invertida (3DS): el codigo nativo lee esta variable al crear el video.
@@ -590,8 +593,12 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_N64_OPT, (n64Level() + 1) % N64Options.levels().size).commit()
             menu.refresh()
         }.takeIf { config.system == "n64" },
+        GameMenu.Item({ "PSP salto de cuadros: " + (PspFrameskip.levels().getOrNull(pspFsLevel())?.label ?: "-") }) {
+            prefs().edit().putInt(PREF_PSP_FS, (pspFsLevel() + 1) % PspFrameskip.levels().size).commit()
+            menu.refresh()
+        }.takeIf { config.system == "psp" },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
-            prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
+            prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 4).apply()
             menu.refresh()
         }.takeIf { config.system in listOf("wii", "gamecube", "gc") },
         GameMenu.Item({ "Wii controller: " + wiiController().label }) {
@@ -608,6 +615,7 @@ class GameActivity : ComponentActivity() {
                 multiplayerLevel() != startedMultiplayer -> "Restart game to apply multiplayer"
                 dolphinLevel() != startedDolphin -> "Restart game to apply optimize"
                 pspGfxLevel() != startedPspGfx -> "Restart game to apply graphics"
+                pspFsLevel() != startedPspFs -> "Restart game to apply frameskip"
                 n64Level() != startedN64 -> "Restart game to apply N64 optimizacion"
                 pspBackend() != startedPspBackend -> "Restart game to apply backend"
                 wiiController() != startedWiiController -> "Restart game to apply controller"
@@ -870,6 +878,9 @@ class GameActivity : ComponentActivity() {
 
     private fun pspGfxLevel() =
         prefs().getInt(PREF_PSP_GFX, 0).coerceIn(0, PpssppGraphics.levels().size - 1)
+
+    private fun pspFsLevel() =
+        prefs().getInt(PREF_PSP_FS, 0).coerceIn(0, PspFrameskip.levels().size - 1)
 
     private fun n64Level() =
         prefs().getInt(PREF_N64_OPT, 0).coerceIn(0, N64Options.levels().size - 1)
@@ -1189,10 +1200,10 @@ class GameActivity : ComponentActivity() {
         return PpssppMultiplayer.levels()[multiplayerLevel()].label
     }
     private fun dolphinLevel(): Int {
-        return prefs().getInt(PREF_DOLPHIN_OPT, 1).coerceIn(0, 2)
+        return prefs().getInt(PREF_DOLPHIN_OPT, 1).coerceIn(0, 3)
     }
     private fun dolphinLabel(): String {
-        return listOf("Rendimiento", "Equilibrado", "Calidad")[dolphinLevel()]
+        return listOf("Rendimiento", "Equilibrado", "Calidad", "Maximo (GPU fuerte)")[dolphinLevel()]
     }
     private fun resolutionLevel(): Int {
         val count = InternalResolution.levels(config.system).size
