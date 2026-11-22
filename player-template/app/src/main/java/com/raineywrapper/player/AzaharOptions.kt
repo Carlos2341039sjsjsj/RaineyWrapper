@@ -18,3 +18,6 @@ internal const val PREF_3DS_TEX = "azahar_tex"
 
 // Audio de la 3DS: 0 = normal (lo que decida el core), 1 = HLE (rapido), 2 = LLE (preciso), 3 = LLE multihilo.
 internal const val PREF_3DS_AUDIO = "azahar_audio"
+
+// Audio: 0 = automatico, 1 = baja latencia, 2 = estable (buffer mas grande, menos cortes).
+internal const val PREF_AUDIO_MODE = "audio_mode"

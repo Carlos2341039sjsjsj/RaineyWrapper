@@ -234,7 +234,7 @@ class GameActivity : ComponentActivity() {
             savesDirectory = saves.savesDir.absolutePath
             saveRAMState = sram
             shader = screenFilter().config
-            preferLowLatencyAudio = true
+            preferLowLatencyAudio = lowLatencyAudio()
             rumbleEventsEnabled = false
             startedResolution = resolutionLevel()
         startedMultiplayer = multiplayerLevel()
@@ -632,6 +632,16 @@ class GameActivity : ComponentActivity() {
             closeMenu()
             moveGameIntoApp()
         }.takeIf { config.linked },
+        GameMenu.Item({
+            "Audio: " + listOf(
+                if (isHeavySystem()) "auto (estable)" else "auto (baja latencia)",
+                "baja latencia",
+                "estable (menos cortes)",
+            )[audioMode()]
+        }) {
+            prefs().edit().putInt(PREF_AUDIO_MODE, (audioMode() + 1) % 3).commit()
+            restartGame()
+        },
         GameMenu.Item({ "Quit" }) { finishAndRemoveTask() },
     )
 
@@ -654,6 +664,18 @@ class GameActivity : ComponentActivity() {
     // --- modo ligero ---------------------------------------------------------
 
     private fun liteMode() = prefs().getBoolean(PREF_LITE, false)
+
+    private fun audioMode() = prefs().getInt(PREF_AUDIO_MODE, 0).coerceIn(0, 2)
+
+    /** Sistemas que en un celular de gama media/baja suelen ir por debajo de la velocidad real. */
+    private fun isHeavySystem() = config.system in listOf("psp", "3ds", "nds", "wii", "gamecube", "gc", "n64", "ps2", "dreamcast")
+
+    /** Baja latencia = buffer chico (4 cuadros): responde antes pero corta el sonido si el juego se atrasa. */
+    private fun lowLatencyAudio(): Boolean = when (audioMode()) {
+        1 -> true
+        2 -> false
+        else -> !isHeavySystem()
+    }
 
     private fun dsLandscape() = prefs().getBoolean(PREF_DS_LAND, false)
 
@@ -735,6 +757,7 @@ class GameActivity : ComponentActivity() {
         else if (config.system == "3ds") e.putBoolean(PREF_3DS_PERF, on).putInt(PREF_3DS_RES, 0)
         else e.putInt(PREF_DOLPHIN_OPT, if (on) 0 else 1)
         if (on) e.putInt(PREF_RESOLUTION, 0)
+        e.putInt(PREF_AUDIO_MODE, if (on) 2 else 0)
         e.commit()
     }
 
