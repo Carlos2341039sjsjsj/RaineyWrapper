@@ -187,6 +187,7 @@ class ConvertActivity : GamepadActivity() {
         top.addView(fields, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         form.addView(top)
 
+        form.addView(patchSection())
         form.addView(label("Storage", 14f, Palette.SUBTLE).apply { setPadding(0, dp(16), 0, 0) })
         val group = RadioGroup(this)
         embedRadio = RadioButton(this).apply {
@@ -226,6 +227,69 @@ class ConvertActivity : GamepadActivity() {
         form.defaultFocusHighlightEnabled = false
         focusHolder = form
         form.requestFocus()
+    }
+
+    /** Mods de ROM: si junto a la ROM hay parches (.ips .bps .ups .xdelta) deja aplicar uno y convertir el resultado. */
+    private fun patchSection(): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val dir = romFile.parentFile ?: return box
+        if (romFile.ext == "zip") return box
+        val patches = dir.listFiles().orEmpty()
+            .filter { it.isFile && it.ext in RomPatcher.EXTENSIONS }
+            .sortedBy { it.name.lowercase() }
+        if (patches.isEmpty()) return box
+        box.addView(
+            button("Aplicar un parche de mod...") { choosePatch(patches) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(14) },
+        )
+        box.addView(label("Crea una copia parcheada de la ROM; la original no se toca.", 12f, Palette.SUBTLE))
+        return box
+    }
+
+    private fun choosePatch(patches: List<File>) {
+        if (busy) return
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Elegi el parche")
+            .setItems(patches.map { it.name }.toTypedArray()) { _, which -> applyPatch(patches[which]) }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun applyPatch(patch: File) {
+        busy = true
+        android.widget.Toast.makeText(this, "Aplicando el parche...", android.widget.Toast.LENGTH_SHORT).show()
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { patchedCopy(patch) } }
+            busy = false
+            result.onSuccess { out ->
+                android.widget.Toast.makeText(this@ConvertActivity, "Listo: " + out.name, android.widget.Toast.LENGTH_LONG).show()
+                startActivity(Intent(this@ConvertActivity, ConvertActivity::class.java).putExtra(EXTRA_ROM, out.absolutePath))
+                finish()
+            }.onFailure { e ->
+                val msg = if (e is UserError) e.message
+                else if (e is OutOfMemoryError) "No hay memoria para parchear una ROM tan grande. Usa hack64.net en el navegador."
+                else "No se pudo aplicar el parche: " + e.message
+                android.app.AlertDialog.Builder(this@ConvertActivity).setMessage(msg).setPositiveButton("OK", null).show()
+            }
+        }
+    }
+
+    /** Escribe "<nombre> (parcheado).<ext>" junto a la ROM (o en la carpeta de la app si ahi no se puede escribir). */
+    private fun patchedCopy(patch: File): File {
+        if (romFile.length() > RomPatcher.MAX_BYTES) {
+            throw UserError("La ROM es demasiado grande para parchearla en el celular. Usa hack64.net en el navegador.")
+        }
+        val rom = romFile.readBytes()
+        val bytes = patch.readBytes()
+        val name = romFile.nameWithoutExtension + " (parcheado)." + romFile.extension
+        var out = File(romFile.parentFile, name)
+        try {
+            out.outputStream().buffered().use { RomPatcher.apply(rom, bytes, it) }
+        } catch (e: java.io.IOException) {
+            out = File(getExternalFilesDir(null) ?: cacheDir, name)
+            out.outputStream().buffered().use { RomPatcher.apply(rom, bytes, it) }
+        }
+        return out
     }
 
     private fun applyStorageDefault() {
