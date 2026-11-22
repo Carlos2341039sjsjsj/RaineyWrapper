@@ -62,6 +62,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_PAD_MODE = "pad_mode"
         private const val PREF_MOD_PATH = "mod_path"
         private const val PREF_PSP_GFX = "psp_gfx_level"
+        private const val PREF_DOLPHIN_CLOCK = "dolphin_clock_level"
         private const val PREF_PSP_FS = "psp_frameskip_level"
         private const val PREF_N64_OPT = "n64_opt_level"
         private const val PREF_MOVED_PATH = "moved_path"
@@ -251,7 +252,7 @@ class GameActivity : ComponentActivity() {
         startedPspBackend = pspBackend()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system == "n64") N64Options.levels().getOrNull(startedN64)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PspFrameskip.levels().getOrNull(startedPspFs)?.variables.orEmpty() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system == "n64") N64Options.levels().getOrNull(startedN64)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PspFrameskip.levels().getOrNull(startedPspFs)?.variables.orEmpty() else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) dolphinClockVars() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         // Imagen invertida (3DS): el codigo nativo lee esta variable al crear el video.
@@ -548,6 +549,7 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putBoolean(PREF_DS_LAND, !dsLandscape()).commit()
             restartGame()
         }.takeIf { isDualScreen() },
+        GameMenu.Item({ "Mi dispositivo" }) { showDeviceInfo() },
         GameMenu.Item({ "Modo ligero: " + (if (liteMode()) "si" else "no") }) {
             setLite(!liteMode())
             Toast.makeText(this, "Reinicia el juego para aplicar", Toast.LENGTH_LONG).show()
@@ -601,6 +603,10 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_PSP_FS, (pspFsLevel() + 1) % PspFrameskip.levels().size).commit()
             menu.refresh()
         }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Reloj CPU: " + listOf("100% (normal)", "80%", "70%", "60%")[dolphinClock()] }) {
+            prefs().edit().putInt(PREF_DOLPHIN_CLOCK, (dolphinClock() + 1) % 4).commit()
+            restartGame()
+        }.takeIf { config.system in listOf("wii", "gamecube", "gc") },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 4).apply()
             menu.refresh()
@@ -691,6 +697,45 @@ class GameActivity : ComponentActivity() {
     // --- modo ligero ---------------------------------------------------------
 
     private fun liteMode() = prefs().getBoolean(PREF_LITE, false)
+
+    private fun dolphinClock() = prefs().getInt(PREF_DOLPHIN_CLOCK, 0).coerceIn(0, 3)
+
+    /** dolphin_cpu_clock_rate: null = el valor normal del nucleo (100%). Los valores siguen el estilo "80%" de Azahar. */
+    private fun dolphinClockVars(): List<Variable> =
+        listOfNotNull(listOf(null, "80%", "70%", "60%")[dolphinClock()]?.let { Variable("dolphin_cpu_clock_rate", it) })
+
+    /** Muestra la GPU y su nivel (0 a 4) para ver que perfil le toca; se puede copiar y mandar. */
+    private fun showDeviceInfo() {
+        lifecycleScope.launch {
+            val gpu = withContext(Dispatchers.Default) { DeviceProfile.gpuName() }
+            val level = DeviceProfile.fullTier(gpu)
+            val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+            val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+            val soc = if (android.os.Build.VERSION.SDK_INT >= 31) android.os.Build.SOC_MODEL else "-"
+            val ram = "%.1f".format(mi.totalMem / 1073741824.0)
+            val weak = if (DeviceProfile.weakChip(gpu)) " (GPU muy floja)" else ""
+            val text = "GPU: " + (gpu ?: "no se pudo leer") + "\n" +
+                "Nivel: " + DeviceProfile.describe(gpu) + "\n" +
+                "Modo ligero sugerido: " + (if (level in 0..1) "si" else "no") + weak + "\n" +
+                "Equipo: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL + "\n" +
+                "Chip: " + soc + "\n" +
+                "Android: " + android.os.Build.VERSION.RELEASE + " (API " + android.os.Build.VERSION.SDK_INT + ")\n" +
+                "RAM: " + ram + " GB\n" +
+                "Nucleos CPU: " + Runtime.getRuntime().availableProcessors() + "\n" +
+                "Juego: " + config.system
+            if (isFinishing || isDestroyed) return@launch
+            android.app.AlertDialog.Builder(this@GameActivity)
+                .setTitle("Mi dispositivo")
+                .setMessage(text)
+                .setPositiveButton("Copiar") { _, _ ->
+                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Mi dispositivo", text))
+                    Toast.makeText(this@GameActivity, "Copiado", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Cerrar", null)
+                .show()
+        }
+    }
 
     /**
      * Ajustes por nivel de GPU (0 muy debil .. 4 tope), que se suman al modo ligero cuando se acepta el aviso:

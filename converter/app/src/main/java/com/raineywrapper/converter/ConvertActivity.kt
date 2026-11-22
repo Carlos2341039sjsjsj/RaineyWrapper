@@ -63,6 +63,8 @@ class ConvertActivity : GamepadActivity() {
     private lateinit var linkRadio: RadioButton
     private lateinit var info: TextView
     private lateinit var convertButton: Button
+    private lateinit var saveCopyCheck: android.widget.CheckBox
+    private var savedCopyName: String? = null
     private lateinit var progress: ProgressBar
     private lateinit var statusText: TextView
     private lateinit var doneRow: LinearLayout
@@ -205,6 +207,11 @@ class ConvertActivity : GamepadActivity() {
         group.setOnCheckedChangeListener { _, _ -> refreshInfo() }
         form.addView(group)
         applyStorageDefault()
+        saveCopyCheck = android.widget.CheckBox(this).apply {
+            text = "Guardar tambien una copia del APK en Descargas (respaldo)"
+            setTextColor(Palette.TEXT)
+        }
+        form.addView(saveCopyCheck)
 
         info = label("", 14f, Palette.SUBTLE).apply { setPadding(0, dp(10), 0, dp(10)) }
         form.addView(info)
@@ -388,6 +395,12 @@ class ConvertActivity : GamepadActivity() {
                 apk = withContext(Dispatchers.IO) {
                     Converter.convert(this@ConvertActivity, request) { text, p -> runOnUiThread { showStatus(text, p) } }
                 }
+                savedCopyName = null
+                if (saveCopyCheck.isChecked) {
+                    showStatus("Guardando una copia en Descargas…", null)
+                    val built: File = apk!!
+                    savedCopyName = withContext(Dispatchers.IO) { saveApkCopy(built, request.title) }
+                }
                 showStatus("Installing… (confirm on the next screen)", 0f)
                 val result = Installer.install(this@ConvertActivity, apk, request.appId) { p ->
                     runOnUiThread { progress.progress = (p * 1000).toInt() }
@@ -437,10 +450,35 @@ class ConvertActivity : GamepadActivity() {
         convertButton.requestFocus()
     }
 
+    /** Copia el APK a Descargas (MediaStore en Android 10+). Devuelve el nombre del archivo o null si fallo. */
+    private fun saveApkCopy(apk: File, title: String): String? = try {
+        val name = title.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().ifEmpty { "game" } + ".apk"
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                put(android.provider.MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!
+            contentResolver.openOutputStream(uri)!!.use { out -> apk.inputStream().use { it.copyTo(out) } }
+            val done = android.content.ContentValues().apply { put(android.provider.MediaStore.Downloads.IS_PENDING, 0) }
+            contentResolver.update(uri, done, null, null)
+            name
+        } else {
+            val dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            dir.mkdirs()
+            apk.copyTo(File(dir, name), overwrite = true)
+            name
+        }
+    } catch (e: Exception) {
+        null
+    }
+
     private fun showDone(request: Converter.Request) {
         progress.visibility = View.GONE
         statusText.setTextColor(Palette.TEXT)
-        statusText.text = "✓ ${request.title} is installed. Find it on your home screen or app drawer."
+        statusText.text = "✓ ${request.title} is installed. Find it on your home screen or app drawer." +
+            (savedCopyName?.let { "\nCopia del APK guardada en Descargas: $it" } ?: "")
         doneRow.removeAllViews()
         val play = button("Play now", primary = true) {
             packageManager.getLaunchIntentForPackage(request.appId)?.let { startActivity(it) }
