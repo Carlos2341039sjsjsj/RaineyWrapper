@@ -71,6 +71,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_MP_IP = "mp_server_ip"
         private const val PREF_MP_MAC = "mp_mac"
         private const val PREF_LITE = "lite_mode"
+        private const val PREF_SUSTAINED = "sustained_perf"
         private const val PREF_LITE_ASKED = "lite_asked"
         private const val PREF_DS_LAND = "ds_landscape"
         private const val PREF_DS_PERF = "ds_perf_high"
@@ -132,6 +133,7 @@ class GameActivity : ComponentActivity() {
         }
         installCrashLog()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applySustained()
         preferSixtyHz()
         container = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         setContentView(container)
@@ -544,7 +546,12 @@ class GameActivity : ComponentActivity() {
             setLite(!liteMode())
             Toast.makeText(this, "Reinicia el juego para aplicar", Toast.LENGTH_LONG).show()
             menu.refresh()
-        }.takeIf { config.system in listOf("psp", "wii", "gamecube", "gc", "3ds") },
+        }.takeIf { config.system in listOf("psp", "wii", "gamecube", "gc", "3ds", "nds") },
+        GameMenu.Item({ "Rendimiento sostenido: " + (if (sustained()) "si" else "no") }) {
+            prefs().edit().putBoolean(PREF_SUSTAINED, !sustained()).commit()
+            applySustained()
+            menu.refresh()
+        },
         GameMenu.Item({ "Controllers: " + listOf("1 player", "Pads = P1, P2...", "Touch = P1, pads = P2...")[padModeLevel()] }) {
             prefs().edit().putInt(PREF_PAD_MODE, (padModeLevel() + 1) % 3).apply()
             gamepad?.let { it.padMode = padModeLevel(); it.resetPorts() }
@@ -665,6 +672,30 @@ class GameActivity : ComponentActivity() {
 
     private fun liteMode() = prefs().getBoolean(PREF_LITE, false)
 
+    /**
+     * Ajustes por nivel de GPU (0 muy debil .. 4 tope), que se suman al modo ligero cuando se acepta el aviso:
+     * rendimiento sostenido siempre; en 3DS, los niveles 0 y 1 usan el preset de rendimiento alto y el nivel 2 solo 1x.
+     */
+    private fun applyGpuTier(level: Int) {
+        val e = prefs().edit().putBoolean(PREF_SUSTAINED, true)
+        if (config.system == "3ds") e.putBoolean(PREF_3DS_PERF, level <= 1).putInt(PREF_3DS_RES, 0)
+        e.commit()
+        applySustained()
+    }
+
+    private fun sustained() = prefs().getBoolean(PREF_SUSTAINED, false)
+
+    /** Modo de rendimiento sostenido de Android (evita que el celular se frene al calentarse). */
+    private fun applySustained() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            if (android.os.Build.VERSION.SDK_INT >= 24 && pm.isSustainedPerformanceModeSupported) {
+                window.setSustainedPerformanceMode(sustained())
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
     private fun audioMode() = prefs().getInt(PREF_AUDIO_MODE, 0).coerceIn(0, 2)
 
     /** Sistemas que en un celular de gama media/baja suelen ir por debajo de la velocidad real. */
@@ -755,6 +786,7 @@ class GameActivity : ComponentActivity() {
         val e = prefs().edit().putBoolean(PREF_LITE, on)
         if (config.system == "psp") e.putInt(PREF_PSP_GFX, if (on) 1 else 0)
         else if (config.system == "3ds") e.putBoolean(PREF_3DS_PERF, on).putInt(PREF_3DS_RES, 0)
+        else if (config.system == "nds") e.putBoolean(PREF_DS_PERF, on)
         else e.putInt(PREF_DOLPHIN_OPT, if (on) 0 else 1)
         if (on) e.putInt(PREF_RESOLUTION, 0)
         e.putInt(PREF_AUDIO_MODE, if (on) 2 else 0)
@@ -766,7 +798,7 @@ class GameActivity : ComponentActivity() {
     private var liteRestarting = false
 
     private fun offerLiteMode(next: () -> Unit) {
-        if (config.system !in listOf("psp", "wii", "gamecube", "gc", "3ds")) { next(); return }
+        if (config.system !in listOf("psp", "wii", "gamecube", "gc", "3ds", "nds")) { next(); return }
         if (prefs().getBoolean(PREF_LITE_ASKED, false)) { next(); return }
         lifecycleScope.launch {
             val gpu = withContext(Dispatchers.Default) { DeviceProfile.gpuName() }
@@ -783,8 +815,12 @@ class GameActivity : ComponentActivity() {
     }
 
     private fun showLiteDialog(gpu: String?, tier: Int, next: () -> Unit) {
-        val gpuText = if (gpu.isNullOrBlank()) "tu GPU" else "$gpu (${DeviceProfile.tierName(tier)})"
-        val details = if (config.system == "3ds") {
+        val gpuText = if (gpu.isNullOrBlank()) "tu GPU" else "$gpu (${DeviceProfile.describe(gpu)})"
+        val details = if (config.system == "nds") {
+            "- Rendimiento alto de DS (audio sin interpolacion, 10 bits)\n" +
+                "- Audio estable (buffer mas grande, menos cortes)\n" +
+                "- Rendimiento sostenido (el celular no baja la velocidad al calentarse)\n\n"
+        } else if (config.system == "3ds") {
             "- Resolucion interna 1x (nativa)\n" +
                 "- Rendimiento alto (menos precision en el GPU, puede haber pequenos fallos graficos)\n" +
                 "- La 3DS es muy exigente: aun asi puede no ir fluido en juegos pesados\n\n"
@@ -802,6 +838,7 @@ class GameActivity : ComponentActivity() {
             .setPositiveButton("Activar") { _, _ ->
                 setLite(true)
                 prefs().edit().putBoolean(PREF_LITE_ASKED, true).commit()
+                applyGpuTier(DeviceProfile.fullTier(gpu))
                 liteRestarting = true
                 restartGame()
             }

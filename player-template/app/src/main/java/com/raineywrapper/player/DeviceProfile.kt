@@ -6,7 +6,11 @@ import android.opengl.EGLContext
 import android.opengl.EGLSurface
 import android.opengl.GLES20
 
-/** Detecta la GPU del telefono y la clasifica de forma aproximada (0 = Basica, 1 = Media, 2 = Alta). */
+/**
+ * Detecta la GPU y la clasifica por su nombre (GL_RENDERER, p. ej. "Mali-G68 MC4", "Adreno (TM) 619").
+ * Nivel: 0 muy debil, 1 debil, 2 media, 3 fuerte, 4 tope de gama; -1 si no se conoce.
+ * Las reglas se revisan en orden y gana la primera que coincide.
+ */
 object DeviceProfile {
     /** GL_RENDERER leido con un contexto EGL descartable; null si no se pudo. Llamar fuera del hilo principal. */
     fun gpuName(): String? {
@@ -46,21 +50,80 @@ object DeviceProfile {
         }
     }
 
-    /** Estimacion por familia de GPU. Una GPU desconocida cuenta como Media. */
-    fun tier(gpu: String?): Int {
-        val g = gpu?.lowercase() ?: return 1
-        Regex("mali-g(\\d+)").find(g)?.let { m ->
-            val n = m.groupValues[1].toInt()
-            return if (n <= 52) 0 else if (n <= 76) 1 else 2
+    /** [family]: expresion regular sobre el nombre en minusculas; [from]..[to]: su numero de tres cifras (0..0 = cualquiera). */
+    private class Rule(val family: String, val from: Int, val to: Int, val tier: Int)
+
+    private fun mali(model: String, tier: Int) = Rule("mali-$model(?!\\d)", 0, 0, tier)
+
+    private val rules = listOf(
+        // Qualcomm Adreno
+        Rule("adreno", 300, 529, 0), Rule("adreno", 530, 539, 1), Rule("adreno", 540, 599, 2),
+        Rule("adreno", 600, 612, 0), Rule("adreno", 613, 629, 1), Rule("adreno", 630, 649, 2),
+        Rule("adreno", 650, 699, 3), Rule("adreno", 700, 712, 1), Rule("adreno", 713, 729, 2),
+        Rule("adreno", 730, 739, 3), Rule("adreno", 740, 899, 4),
+        // Arm Mali (Midgard, Bifrost, Valhall, 5.a gen) e Immortalis
+        Rule("mali-g1-ultra", 0, 0, 4), Rule("mali-g1-premium", 0, 0, 3), Rule("mali-g1-pro", 0, 0, 2),
+        mali("g310", 0), mali("g510", 1), mali("g620", 2),
+        Rule("mali-t\\d", 0, 0, 0), Rule("mali-4\\d\\d", 0, 0, 0),
+        mali("g31", 0), mali("g51", 0), mali("g52", 0), mali("g57", 0), mali("g71", 1), mali("g72", 1),
+        mali("g68", 1), mali("g76", 2), mali("g77", 2), mali("g78", 2), mali("g610", 2), mali("g615", 2),
+        mali("g710", 3), mali("g715", 3), mali("g720", 3), mali("g725", 3), mali("g925", 4),
+        Rule("immortalis", 0, 0, 4),
+        // Samsung Xclipse (AMD RDNA)
+        Rule("xclipse", 500, 599, 1), Rule("xclipse", 900, 929, 3), Rule("xclipse", 930, 999, 4),
+        // Imagination PowerVR
+        Rule("\\bg[em]?\\d{4}", 0, 0, 0), Rule("bxe", 0, 0, 0), Rule("bxm", 0, 0, 1), Rule("dxt", 0, 0, 2),
+        Rule("powervr", 0, 0, 0),
+        // Huawei
+        Rule("maleoon", 0, 0, 2),
+    )
+
+    /** Nucleos de un Mali ("MC2", "MP4"); 0 si no lo dice. */
+    private fun maliCores(name: String): Int = Regex("MC(\\d+)|MP(\\d+)", RegexOption.IGNORE_CASE).find(name)
+        ?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: 0
+
+    /** Nivel 0..4 por el nombre de la GPU; -1 si no se conoce. Un Mali con 1-2 nucleos baja un nivel; con 10 o mas sube uno. */
+    fun fullTier(gpu: String?): Int {
+        if (gpu.isNullOrBlank()) return -1
+        val n = gpu.lowercase().replace("(tm)", "").replace(Regex("\\s+"), " ").trim()
+        val number = Regex("(\\d{3})").find(n)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        for (r in rules) {
+            if (!Regex(r.family).containsMatchIn(n)) continue
+            if ((r.from == 0 && r.to == 0) || number in r.from..r.to) {
+                var t = r.tier
+                if (n.startsWith("mali")) {
+                    val cores = maliCores(gpu)
+                    if (cores in 1..2 && t > 0) t--
+                    if (cores >= 10 && t < 4) t++
+                }
+                return t
+            }
         }
-        if ("immortalis" in g || "xclipse" in g) return 2
-        if ("mali-t" in g || "mali-4" in g || "powervr" in g) return 0
-        Regex("adreno.*?(\\d{3})").find(g)?.let { m ->
-            val n = m.groupValues[1].toInt()
-            return if (n <= 540 || n in 600..616) 0 else if (n < 640) 1 else 2
-        }
-        return 1
+        return -1
+    }
+
+    /** Las GPU mas flojas (nivel 0), salvo un Mali-G57 con 3 o mas nucleos, que aguanta mas. */
+    fun weakChip(gpu: String?): Boolean {
+        if (fullTier(gpu) != 0) return false
+        val n = gpu?.lowercase() ?: return false
+        return !(Regex("mali-g57(?!\\d)").containsMatchIn(n) && maliCores(gpu) !in 1..2)
+    }
+
+    /** Escala simple de siempre: 0 = Basica, 1 = Media, 2 = Alta (desconocida = Media). Basica = niveles 0 y 1. */
+    fun tier(gpu: String?): Int = when (fullTier(gpu)) {
+        -1 -> 1
+        0, 1 -> 0
+        2 -> 1
+        else -> 2
     }
 
     fun tierName(tier: Int) = when (tier) { 0 -> "Basica"; 1 -> "Media"; else -> "Alta" }
+
+    /** Texto para el aviso: "nivel 1 de 4, gama baja". */
+    fun describe(gpu: String?): String {
+        val t = fullTier(gpu)
+        if (t < 0) return "GPU sin clasificar"
+        val name = arrayOf("muy baja", "baja", "media", "alta", "tope de gama")[t]
+        return "nivel $t de 4, gama $name"
+    }
 }
