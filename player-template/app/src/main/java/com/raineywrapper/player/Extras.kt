@@ -120,3 +120,30 @@ object PpssppGraphics {
             Variable("ppsspp_texture_filtering", "Auto max quality"))),
     )
 }
+
+// N64 (Mupen64Plus-Next). Claves comprobadas con `strings` sobre libmupen64plus_next_gles3_libretro_android.so.
+// Valores de la documentacion de libretro: cpucore dynamic_recompiler/cached_interpreter, copias a RDRAM Off,
+// FB emulation y blending True/False. Los de ThreadedRenderer, LOD, MultiSampling y FXAA siguen el mismo estilo.
+object N64Options {
+    private fun v(key: String, value: String) = Variable("mupen64plus-$key", value)
+
+    fun levels() = listOf(
+        ExtraLevel("Normal", emptyList()),
+        ExtraLevel("Rendimiento", listOf(
+            Variable("mupen64plus-cpucore", "dynamic_recompiler"),
+            v("ThreadedRenderer", "True"),
+            v("EnableCopyColorToRDRAM", "Off"),
+            v("EnableCopyDepthToRDRAM", "Off"),
+            v("EnableLegacyBlending", "True"),
+            v("EnableLODEmulation", "False"),
+            v("MultiSampling", "0"),
+            v("FXAA", "0"))),
+        // Para hacks que se quedan en blanco o con fallos graficos.
+        ExtraLevel("Interprete (hacks)", listOf(Variable("mupen64plus-cpucore", "cached_interpreter"))),
+        ExtraLevel("Sin copia a RDRAM", listOf(
+            v("EnableCopyColorToRDRAM", "Off"),
+            v("EnableCopyDepthToRDRAM", "Off"))),
+        ExtraLevel("Sin FB emulation", listOf(v("EnableFBEmulation", "False"))),
+        ExtraLevel("Blending legacy", listOf(v("EnableLegacyBlending", "True"))),
+    )
+}

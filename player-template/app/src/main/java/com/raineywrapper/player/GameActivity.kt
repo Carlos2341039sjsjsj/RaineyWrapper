@@ -62,6 +62,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_PAD_MODE = "pad_mode"
         private const val PREF_MOD_PATH = "mod_path"
         private const val PREF_PSP_GFX = "psp_gfx_level"
+        private const val PREF_N64_OPT = "n64_opt_level"
         private const val PREF_MOVED_PATH = "moved_path"
         private const val PREF_MOVED_FROM = "moved_from"
         private const val PREF_ASKED_MOVE = "asked_move"
@@ -99,6 +100,7 @@ class GameActivity : ComponentActivity() {
     private var startedMultiplayer = 0
     private var startedDolphin = 1
     private var startedPspGfx = 0
+    private var startedN64 = 0
     private var currentRom: File? = null
     private var startedPspBackend = 0
     private var startedWiiController = WiiController.NUNCHUK
@@ -242,10 +244,11 @@ class GameActivity : ComponentActivity() {
         startedMultiplayer = multiplayerLevel()
         startedDolphin = dolphinLevel()
         startedPspGfx = pspGfxLevel()
+        startedN64 = n64Level()
         startedPspBackend = pspBackend()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system == "n64") N64Options.levels().getOrNull(startedN64)?.variables.orEmpty() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         // Imagen invertida (3DS): el codigo nativo lee esta variable al crear el video.
@@ -546,7 +549,7 @@ class GameActivity : ComponentActivity() {
             setLite(!liteMode())
             Toast.makeText(this, "Reinicia el juego para aplicar", Toast.LENGTH_LONG).show()
             menu.refresh()
-        }.takeIf { config.system in listOf("psp", "wii", "gamecube", "gc", "3ds", "nds") },
+        }.takeIf { config.system in listOf("psp", "wii", "gamecube", "gc", "3ds", "nds", "n64") },
         GameMenu.Item({ "Rendimiento sostenido: " + (if (sustained()) "si" else "no") }) {
             prefs().edit().putBoolean(PREF_SUSTAINED, !sustained()).commit()
             applySustained()
@@ -583,6 +586,10 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putBoolean(PREF_3DS_PERF, !prefs().getBoolean(PREF_3DS_PERF, false)).commit()
             restartGame()
         }.takeIf { config.system == "3ds" },
+        GameMenu.Item({ "N64 optimizacion: " + (N64Options.levels().getOrNull(n64Level())?.label ?: "-") }) {
+            prefs().edit().putInt(PREF_N64_OPT, (n64Level() + 1) % N64Options.levels().size).commit()
+            menu.refresh()
+        }.takeIf { config.system == "n64" },
         GameMenu.Item({ "Optimize: " + dolphinLabel() }) {
             prefs().edit().putInt(PREF_DOLPHIN_OPT, (dolphinLevel() + 1) % 3).apply()
             menu.refresh()
@@ -601,6 +608,7 @@ class GameActivity : ComponentActivity() {
                 multiplayerLevel() != startedMultiplayer -> "Restart game to apply multiplayer"
                 dolphinLevel() != startedDolphin -> "Restart game to apply optimize"
                 pspGfxLevel() != startedPspGfx -> "Restart game to apply graphics"
+                n64Level() != startedN64 -> "Restart game to apply N64 optimizacion"
                 pspBackend() != startedPspBackend -> "Restart game to apply backend"
                 wiiController() != startedWiiController -> "Restart game to apply controller"
                 else -> "Restart game"
@@ -787,6 +795,7 @@ class GameActivity : ComponentActivity() {
         if (config.system == "psp") e.putInt(PREF_PSP_GFX, if (on) 1 else 0)
         else if (config.system == "3ds") e.putBoolean(PREF_3DS_PERF, on).putInt(PREF_3DS_RES, 0)
         else if (config.system == "nds") e.putBoolean(PREF_DS_PERF, on)
+        else if (config.system == "n64") e.putInt(PREF_N64_OPT, if (on) 1 else 0)
         else e.putInt(PREF_DOLPHIN_OPT, if (on) 0 else 1)
         if (on) e.putInt(PREF_RESOLUTION, 0)
         e.putInt(PREF_AUDIO_MODE, if (on) 2 else 0)
@@ -798,7 +807,7 @@ class GameActivity : ComponentActivity() {
     private var liteRestarting = false
 
     private fun offerLiteMode(next: () -> Unit) {
-        if (config.system !in listOf("psp", "wii", "gamecube", "gc", "3ds", "nds")) { next(); return }
+        if (config.system !in listOf("psp", "wii", "gamecube", "gc", "3ds", "nds", "n64")) { next(); return }
         if (prefs().getBoolean(PREF_LITE_ASKED, false)) { next(); return }
         lifecycleScope.launch {
             val gpu = withContext(Dispatchers.Default) { DeviceProfile.gpuName() }
@@ -816,7 +825,10 @@ class GameActivity : ComponentActivity() {
 
     private fun showLiteDialog(gpu: String?, tier: Int, next: () -> Unit) {
         val gpuText = if (gpu.isNullOrBlank()) "tu GPU" else "$gpu (${DeviceProfile.describe(gpu)})"
-        val details = if (config.system == "nds") {
+        val details = if (config.system == "n64") {
+            "- N64 optimizacion: Rendimiento (hilo de render, sin copias a RDRAM, sin suavizados)\n" +
+                "- Rendimiento sostenido y audio estable\n\n"
+        } else if (config.system == "nds") {
             "- Rendimiento alto de DS (audio sin interpolacion, 10 bits)\n" +
                 "- Audio estable (buffer mas grande, menos cortes)\n" +
                 "- Rendimiento sostenido (el celular no baja la velocidad al calentarse)\n\n"
@@ -858,6 +870,9 @@ class GameActivity : ComponentActivity() {
 
     private fun pspGfxLevel() =
         prefs().getInt(PREF_PSP_GFX, 0).coerceIn(0, PpssppGraphics.levels().size - 1)
+
+    private fun n64Level() =
+        prefs().getInt(PREF_N64_OPT, 0).coerceIn(0, N64Options.levels().size - 1)
 
     // --- mods and save import ----------------------------------------------------
 
