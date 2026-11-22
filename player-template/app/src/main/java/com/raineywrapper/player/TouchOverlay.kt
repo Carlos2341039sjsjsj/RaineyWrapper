@@ -510,6 +510,10 @@ class TouchOverlay(
     }
 
     private fun drawDpad(canvas: Canvas) {
+        if (webLayout) {
+            drawKeyDpad(canvas)
+            return
+        }
         val o = dpadR * 0.62f
         val dirs = listOf(
             Triple("▲", 0f, -o) to KeyEvent.KEYCODE_DPAD_UP, Triple("▼", 0f, o) to KeyEvent.KEYCODE_DPAD_DOWN,
@@ -655,9 +659,49 @@ class TouchOverlay(
         }
     }
 
+    /** Juegos de PC (RPG Maker MV/MZ): los dos botones de cara son Z y X. */
+    private val webLayout: Boolean = layout.face.map { it.label }.toSet() == setOf("Z", "X")
+
+    /** Una tecla de teclado: tapa negra con degradado, borde gris y letras blancas; se aclara al apretarla. */
+    private fun drawKey(canvas: Canvas, r: RectF, label: String, pressed: Boolean, size: Float) {
+        val rad = minOf(r.width(), r.height()) * 0.22f
+        val lift = r.height() * 0.07f
+        tint.color = Color.argb(150, 0, 0, 0)
+        canvas.drawRoundRect(RectF(r.left, r.top + lift, r.right, r.bottom + lift), rad, rad, tint)
+        val top = if (pressed) Color.rgb(78, 78, 88) else Color.rgb(54, 54, 60)
+        val bottom = if (pressed) Color.rgb(40, 40, 46) else Color.rgb(14, 14, 18)
+        gradPaint.shader = android.graphics.LinearGradient(
+            r.left, r.top, r.left, r.bottom, top, bottom, android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawRoundRect(r, rad, rad, gradPaint)
+        gradPaint.shader = null
+        canvas.drawRoundRect(r, rad, rad, ringStyle(Color.argb(210, 120, 120, 132), 2.5f))
+        text.color = Color.WHITE
+        text.textSize = size
+        while (text.measureText(label) > r.width() * 0.84f && text.textSize > 8f) text.textSize -= 1f
+        canvas.drawText(label, r.centerX(), r.centerY() + text.textSize / 3, text)
+    }
+
+    /** La cruz como cuatro teclas de flecha. */
+    private fun drawKeyDpad(canvas: Canvas) {
+        val s = dpadR * 0.34f
+        val o = dpadR * 0.66f
+        val dirs = listOf(
+            Triple("\u25B2", 0f, -o) to KeyEvent.KEYCODE_DPAD_UP, Triple("\u25BC", 0f, o) to KeyEvent.KEYCODE_DPAD_DOWN,
+            Triple("\u25C0", -o, 0f) to KeyEvent.KEYCODE_DPAD_LEFT, Triple("\u25B6", o, 0f) to KeyEvent.KEYCODE_DPAD_RIGHT,
+        )
+        for ((t, key) in dirs) {
+            val (label, dx, dy) = t
+            drawKey(canvas, RectF(dpadCx + dx - s, dpadCy + dy - s, dpadCx + dx + s, dpadCy + dy + s), label, isPressed(key), s * 0.9f)
+        }
+    }
+
     private fun drawControl(canvas: Canvas, c: Control) {
         val pressed = isPressed(c.keyCode)
         val face = c.round
+        if (webLayout) {
+            drawKey(canvas, c.rect, c.label, pressed, c.rect.height() * 0.42f)
+            return
+        }
         var label = if (face) faceLabel(c.label) else c.label
         if (controlStyle == 3 && !face) {
             if (label == "SELECT") label = "−"
