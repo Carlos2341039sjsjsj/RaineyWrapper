@@ -13,7 +13,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.raineywrapper.converter"
+        applicationId = "com.raineywrapper.converter.beta"
         minSdk = 26
         targetSdk = 37
         versionCode = raineywrapperVersionCode

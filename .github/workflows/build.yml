@@ -33,6 +33,8 @@ jobs:
           test -n "$SRC"
           mkdir -p player-template/app/src/main/jniLibs/arm64-v8a
           cp "$SRC" player-template/app/src/main/jniLibs/arm64-v8a/libc++_shared.so
+      - name: Fetch Ruffle
+        run: sh cores/fetch_ruffle.sh
       - name: Doctor
         run: ./raineywrapper doctor
       - name: Build

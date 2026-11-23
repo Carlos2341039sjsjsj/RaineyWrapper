@@ -248,6 +248,11 @@
         "neogeopocket"
       ]
     },
+    "swf": {
+      "name": "Flash (.swf, con Ruffle)",
+      "extensions": ["swf"],
+      "folders": ["flash", "swf"]
+    },
     "rpgmv": {
       "name": "Juego web HTML5 (RPG Maker MV/MZ, Unity WebGL)",
       "extensions": [

@@ -308,7 +308,7 @@ sealed class GameSource(val file: File, val system: GameSystem) {
             if (ext == "exe" || ext == "msi" || ext == "bat") {
                 throw UserError(
                     "${file.name} es un programa de Windows (.$ext) y no se puede abrir en el celular.\n\n" +
-                        "Solo se leen juegos web de RPG Maker MV/MZ (index.html) y de RPG Maker 2000/2003 (RPG_RT.ldb). " +
+                        "Solo se leen juegos web HTML5 (index.html: RPG Maker MV/MZ, novelas visuales, plataformas) y de RPG Maker 2000/2003 (RPG_RT.ldb). " +
                         "Si tu juego es otro, busca una version para Android.",
                 )
             }
@@ -360,8 +360,13 @@ sealed class GameSource(val file: File, val system: GameSystem) {
         private fun resolveZip(context: Context, file: File, systemOverride: GameSystem?): GameSource {
             ZipFile(file).use { zip ->
                 val entries = zip.entries().asSequence().filter { !it.isDirectory }.toList()
-                if (entries.any { File(it.name).name.equals("index.html", ignoreCase = true) }) {
-                    throw UserError("${file.name} es un juego web (RPG Maker MV/MZ).\n\nDescomprimelo primero y elegi su archivo index.html (o su Game.exe).")
+                // Juego web en un .zip: se descomprime junto al zip (carpeta con su nombre) y se usa su index.html.
+                val webIndex = entries.filter { File(it.name).name.equals("index.html", ignoreCase = true) }
+                    .minByOrNull { it.name.count { c -> c == '/' } }
+                if (webIndex != null) {
+                    val web = Systems.all(context).firstOrNull { it.id == "rpgmv" }
+                        ?: throw UserError("Este programa no trae el modo de juegos web.")
+                    return Single(extractWebZip(zip, entries, webIndex, file), web)
                 }
                 if (Rgss3.looksLikeGame(entries.map { it.name })) {
                     throw UserError("${file.name} es un juego de RPG Maker VX Ace.\n\nDescomprimelo primero y elegi su archivo Game.exe.")
@@ -382,6 +387,30 @@ sealed class GameSource(val file: File, val system: GameSystem) {
                 }
             }
             throw UserError("${file.name} doesn't contain a supported ROM.")
+        }
+
+        /** Descomprime un juego web en una carpeta junto al .zip (con su nombre) y devuelve su index.html. */
+        private fun extractWebZip(zip: ZipFile, entries: List<java.util.zip.ZipEntry>, index: java.util.zip.ZipEntry, source: File): File {
+            val prefix = index.name.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
+            val dest = File(source.parentFile, source.nameWithoutExtension)
+            val target = File(dest, File(index.name).name)
+            if (target.isFile) return target
+            try {
+                dest.mkdirs()
+                val rootPath = dest.canonicalPath + File.separator
+                // El index.html va al final: si se corta la descompresion, la proxima vez se vuelve a hacer entera.
+                for (entry in entries.sortedBy { it == index }) {
+                    if (!entry.name.startsWith(prefix)) continue
+                    val out = File(dest, entry.name.removePrefix(prefix))
+                    if (!out.canonicalPath.startsWith(rootPath)) continue
+                    out.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { input -> out.outputStream().use { input.copyTo(it) } }
+                }
+            } catch (ex: Exception) {
+                throw UserError("No pude descomprimir ${source.name}: ${ex.message}\n\nDescomprimilo a mano y elegi su archivo index.html.")
+            }
+            if (!target.isFile) throw UserError("No pude descomprimir ${source.name}.\n\nDescomprimilo a mano y elegi su archivo index.html.")
+            return target
         }
 
         /** `FILE "Track 01.bin" BINARY` */

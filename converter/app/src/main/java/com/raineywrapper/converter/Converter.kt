@@ -66,6 +66,7 @@ object Converter {
             versionCode = (System.currentTimeMillis() / 60_000).toInt() // same scheme as the desktop builder
             versionName = "device"
             keepCore = request.source.system.coreLibrary
+            keepRuffle = request.source.system.id == "swf"
         }
         status.update("Making the icon…", null)
         spec.replace.putAll(IconMaker.entries(request.title, request.image))

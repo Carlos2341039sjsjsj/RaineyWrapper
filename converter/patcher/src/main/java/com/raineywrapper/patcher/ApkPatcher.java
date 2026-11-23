@@ -77,6 +77,8 @@ public final class ApkPatcher {
         public String versionName;
         /** File name of the core to keep, e.g. "libmgba_libretro_android.so"; others are dropped. */
         public String keepCore;
+        /** Conserva assets/ruffle (reproductor de Flash); solo los juegos .swf lo necesitan. */
+        public boolean keepRuffle;
         /** Zip entries to overwrite, e.g. "res/mipmap-xxhdpi-v4/ic_launcher_foreground.png". */
         public final Map<String, byte[]> replace = new LinkedHashMap<>();
         public final List<Asset> assets = new ArrayList<>();
@@ -168,6 +170,7 @@ public final class ApkPatcher {
         if (name.startsWith("lib/") && name.endsWith(CORE_SUFFIX)) {
             return spec.keepCore == null || !name.endsWith("/" + spec.keepCore);
         }
+        if (name.startsWith("assets/ruffle/")) return !spec.keepRuffle;
         if (name.startsWith(CORE_DATA_DIR)) {
             return spec.keepCore == null || !name.startsWith(CORE_DATA_DIR + coreName(spec.keepCore) + "/");
         }

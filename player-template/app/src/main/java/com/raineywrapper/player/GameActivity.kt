@@ -132,7 +132,7 @@ class GameActivity : ComponentActivity() {
         // rpgmv = RPG Maker MV/MZ (carpeta local), unityweb = juego de Unity que se abre desde un enlace.
         val webScreen = try {
             when (GameConfig.load(this).system) {
-                "rpgmv" -> WebGameActivity::class.java
+                "rpgmv", "swf" -> WebGameActivity::class.java
                 "unityweb" -> UrlGameActivity::class.java
                 else -> null
             }
