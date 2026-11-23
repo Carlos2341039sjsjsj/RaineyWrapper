@@ -249,7 +249,7 @@
       ]
     },
     "rpgmv": {
-      "name": "Juego web (RPG Maker MV/MZ)",
+      "name": "Juego web HTML5 (RPG Maker MV/MZ, Unity WebGL)",
       "extensions": [
         "html"
       ],
@@ -286,6 +286,17 @@
         "windows"
       ],
       "folderGame": true
+    },
+    "unityweb": {
+      "name": "Juego de Unity (version web, por enlace)",
+      "extensions": [
+        "exe"
+      ],
+      "folders": [
+        "unity"
+      ],
+      "folderGame": true,
+      "webUrl": true
     },
     "3ds": {
       "name": "Nintendo 3DS",

@@ -128,11 +128,18 @@ class GameActivity : ComponentActivity() {
         try { System.loadLibrary("c++_shared") } catch (e: Throwable) { android.util.Log.w("Rainey", "c++_shared no cargo: $e") }
         super.onCreate(savedInstanceState)
         CrashLogger.install(this)
-        // Juegos web (RPG Maker MV/MZ): los abre otra pantalla, sin nucleo libretro.
-        val isWeb = try { GameConfig.load(this).system == "rpgmv" } catch (e: Exception) { false }
-        if (isWeb) {
+        // Juegos web: los abre otra pantalla, sin nucleo libretro.
+        // rpgmv = RPG Maker MV/MZ (carpeta local), unityweb = juego de Unity que se abre desde un enlace.
+        val webScreen = try {
+            when (GameConfig.load(this).system) {
+                "rpgmv" -> WebGameActivity::class.java
+                "unityweb" -> UrlGameActivity::class.java
+                else -> null
+            }
+        } catch (e: Exception) { null }
+        if (webScreen != null) {
             redirected = true
-            startActivity(Intent(this, WebGameActivity::class.java))
+            startActivity(Intent(this, webScreen))
             finish()
             return
         }

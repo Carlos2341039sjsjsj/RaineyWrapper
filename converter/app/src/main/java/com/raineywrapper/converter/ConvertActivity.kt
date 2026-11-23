@@ -57,6 +57,11 @@ class ConvertActivity : GamepadActivity() {
     private lateinit var systemSpinner: Spinner
     private lateinit var emulatorLabel: TextView
     private lateinit var emulatorSpinner: Spinner
+    /** Juegos web por enlace (Unity): la direccion de la pagina del juego. */
+    private lateinit var urlLabel: TextView
+    private lateinit var urlInput: EditText
+    private lateinit var storageLabel: TextView
+    private lateinit var storageGroup: RadioGroup
     /** Installed emulator apps for the current external system (PS2), one per package. */
     private var installedEmulators: List<ExternalEmulator> = emptyList()
     private lateinit var embedRadio: RadioButton
@@ -186,12 +191,25 @@ class ConvertActivity : GamepadActivity() {
             }
         }
         fields.addView(emulatorSpinner)
+        urlLabel = label("Enlace del juego (https)", 14f, Palette.SUBTLE).apply { setPadding(0, dp(10), 0, 0) }
+        fields.addView(urlLabel)
+        urlInput = EditText(this).apply {
+            hint = "https://usuario.itch.io/juego"
+            setHintTextColor(Palette.SUBTLE)
+            setTextColor(Palette.TEXT)
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        }
+        fields.addView(urlInput, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         top.addView(fields, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         form.addView(top)
 
         form.addView(patchSection())
-        form.addView(label("Storage", 14f, Palette.SUBTLE).apply { setPadding(0, dp(16), 0, 0) })
+        storageLabel = label("Storage", 14f, Palette.SUBTLE).apply { setPadding(0, dp(16), 0, 0) }
+        form.addView(storageLabel)
         val group = RadioGroup(this)
+        storageGroup = group
         embedRadio = RadioButton(this).apply {
             id = View.generateViewId()
             text = "Put the game inside the app (works on its own; uses extra space)"
@@ -313,6 +331,12 @@ class ConvertActivity : GamepadActivity() {
         emulatorLabel.visibility = if (external) View.VISIBLE else View.GONE
         emulatorSpinner.visibility = if (external && installedEmulators.isNotEmpty()) View.VISIBLE else View.GONE
         emulatorSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, installedEmulators.map { it.name })
+        // Juego web por enlace: se pide la direccion y no tiene sentido elegir donde guardar el juego.
+        val web = source.system.webUrl
+        urlLabel.visibility = if (web) View.VISIBLE else View.GONE
+        urlInput.visibility = if (web) View.VISIBLE else View.GONE
+        storageLabel.visibility = if (web) View.GONE else View.VISIBLE
+        storageGroup.visibility = if (web) View.GONE else View.VISIBLE
         refreshInfo()
     }
 
@@ -349,6 +373,11 @@ class ConvertActivity : GamepadActivity() {
                 lines += "Opens in ${installedEmulators.getOrNull(emulatorSpinner.selectedItemPosition)?.name ?: installedEmulators.first().name}. " +
                     "The game app asks once for file access, then hands the file over."
             }
+        } else if (source.system.webUrl) {
+            lines += "Esta carpeta es la version de Windows de un juego de Unity y no corre en el telefono."
+            lines += "Si el juego tiene version web (en itch.io, el boton \"Run game\"), pega aca la direccion de su pagina: " +
+                "la app la abre en pantalla completa. Necesita internet la primera vez; despues puede abrir sin conexion con lo ya guardado, " +
+                "pero no esta garantizado."
         } else if (source.system.folderGame) {
             lines += "El juego se lee desde su carpeta (${romFile.parentFile?.name ?: "?"}): no la muevas ni la borres. " +
                 "La app pide permiso de archivos la primera vez."
@@ -384,9 +413,21 @@ class ConvertActivity : GamepadActivity() {
             startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
             return
         }
+        var gameUrl: String? = null
+        if (source.system.webUrl) {
+            gameUrl = normalizeGameUrl(urlInput.text.toString())
+            if (gameUrl == null) {
+                statusText.visibility = View.VISIBLE
+                statusText.setTextColor(Palette.TEXT)
+                statusText.text = "Escribi la direccion de la pagina del juego (tiene que empezar con https://)."
+                urlInput.requestFocus()
+                return
+            }
+        }
         val request = Converter.Request(
             source, currentTitle(), appIdFor(currentTitle()), image, embedRadio.isChecked,
             if (source.system.isExternal) emulatorOrder() else emptyList(),
+            gameUrl,
         )
         setBusy(true)
         lifecycleScope.launch {
@@ -424,7 +465,7 @@ class ConvertActivity : GamepadActivity() {
         busy = value
         if (value) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        listOf(titleInput, systemSpinner, emulatorSpinner, convertButton).forEach { it.isEnabled = !value }
+        listOf(titleInput, systemSpinner, emulatorSpinner, urlInput, convertButton).forEach { it.isEnabled = !value }
         embedRadio.isEnabled = !value && !source.system.isExternal && !source.system.folderGame
         linkRadio.isEnabled = !value && source.canLink && source.system.isExternal
         if (value) {

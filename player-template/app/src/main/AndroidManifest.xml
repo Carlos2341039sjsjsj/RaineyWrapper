@@ -4,6 +4,9 @@
     <!-- Only used by games in "link" mode, which play the ROM from device storage. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!-- Los juegos web por enlace (Unity) cargan su pagina desde internet. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- PS2 games hand off to an installed emulator app; this makes those apps visible. -->
     <queries>
         <intent>
@@ -38,6 +41,12 @@
 
         <activity
             android:name=".WebGameActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name=".UrlGameActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
             android:exported="false"
             android:screenOrientation="sensorLandscape" />

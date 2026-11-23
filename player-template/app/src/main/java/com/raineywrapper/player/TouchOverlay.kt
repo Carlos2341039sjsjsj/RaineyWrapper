@@ -44,6 +44,10 @@ class TouchOverlay(
         /** On-screen analog sticks, for systems whose games are played with them. */
         val leftStick: Boolean = false,
         val rightStick: Boolean = false,
+        /** Teclas de teclado (juegos web): se dibujan como teclas negras. */
+        val keyboard: Boolean = false,
+        /** Sin cruz (novelas visuales: se juega tocando la pantalla). */
+        val noDpad: Boolean = false,
     )
 
     companion object {
@@ -63,6 +67,45 @@ class TouchOverlay(
             "pce" -> Layout(listOf(Face("II", B, -0.45f, 0.25f), Face("I", A, 0.45f, -0.25f)), emptyList())
             "atari2600" -> Layout(listOf(Face("FIRE", B, 0f, 0f)), emptyList())
             // RPG Maker MV/MZ en un WebView: Z = aceptar, X = cancelar, SHIFT = correr, CTRL = saltar texto.
+            // Juegos web de plataformas / accion: flechas + Z, X, C, ESPACIO; SHIFT, CTRL, E, Q.
+            "webplat" -> Layout(
+                listOf(
+                    Face("C", KeyEvent.KEYCODE_C, 0f, -0.6f), Face("Z", KeyEvent.KEYCODE_Z, 0.6f, 0f),
+                    Face("X", KeyEvent.KEYCODE_X, 0f, 0.6f), Face("SPC", KeyEvent.KEYCODE_SPACE, -0.6f, 0f),
+                ),
+                listOf(
+                    "SHIFT" to KeyEvent.KEYCODE_SHIFT_LEFT, "E" to KeyEvent.KEYCODE_E,
+                    "CTRL" to KeyEvent.KEYCODE_CTRL_LEFT, "Q" to KeyEvent.KEYCODE_Q,
+                ),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
+                keyboard = true,
+            )
+            // Otra distribucion de accion: ESPACIO salta, J/H/L atacan, SHIFT esquiva, E interactua, R cura, M mapa, TAB menu.
+            "webplat2" -> Layout(
+                listOf(
+                    Face("H", KeyEvent.KEYCODE_H, 0f, -0.6f), Face("J", KeyEvent.KEYCODE_J, 0.6f, 0f),
+                    Face("SPC", KeyEvent.KEYCODE_SPACE, 0f, 0.6f), Face("L", KeyEvent.KEYCODE_L, -0.6f, 0f),
+                ),
+                listOf(
+                    "SHIFT" to KeyEvent.KEYCODE_SHIFT_LEFT, "E" to KeyEvent.KEYCODE_E,
+                    "R" to KeyEvent.KEYCODE_R, "M" to KeyEvent.KEYCODE_M,
+                ),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "TAB", startKey = KeyEvent.KEYCODE_TAB,
+                keyboard = true,
+            )
+            // Novelas visuales web (RenPy, TyranoScript, Twine...): se toca la pantalla; botones para avanzar, auto, saltar y volver.
+            "webvn" -> Layout(
+                listOf(Face("ENTER", KeyEvent.KEYCODE_ENTER, 0f, 0f)),
+                listOf(
+                    "AUTO" to KeyEvent.KEYCODE_A, "SKIP" to KeyEvent.KEYCODE_CTRL_LEFT,
+                    "ATRAS" to KeyEvent.KEYCODE_PAGE_UP, "H" to KeyEvent.KEYCODE_H,
+                ),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "TAB", startKey = KeyEvent.KEYCODE_TAB,
+                keyboard = true, noDpad = true,
+            )
             "rpgmv" -> Layout(
                 listOf(Face("Z", KeyEvent.KEYCODE_Z, 0.45f, -0.25f), Face("X", KeyEvent.KEYCODE_X, -0.45f, 0.25f)),
                 listOf(
@@ -465,6 +508,7 @@ class TouchOverlay(
         } else {
             dpadR = mainR; dpadCx = mainCx; dpadCy = mainCy
         }
+        if (layout.noDpad) { dpadR = 0f; dpadCx = -10000f }
 
         val faceR = unit * 0.62f
         val faceCx = w - margin - mainR
@@ -660,7 +704,7 @@ class TouchOverlay(
     }
 
     /** Juegos de PC (RPG Maker MV/MZ): los dos botones de cara son Z y X. */
-    private val webLayout: Boolean = layout.face.map { it.label }.toSet() == setOf("Z", "X")
+    private val webLayout: Boolean = layout.keyboard || layout.face.map { it.label }.toSet() == setOf("Z", "X")
 
     /** Una tecla de teclado: tapa negra con degradado, borde gris y letras blancas; se aclara al apretarla. */
     private fun drawKey(canvas: Canvas, r: RectF, label: String, pressed: Boolean, size: Float) {
@@ -683,6 +727,7 @@ class TouchOverlay(
 
     /** La cruz como cuatro teclas de flecha. */
     private fun drawKeyDpad(canvas: Canvas) {
+        if (dpadR <= 0f) return
         val s = dpadR * 0.34f
         val o = dpadR * 0.66f
         val dirs = listOf(

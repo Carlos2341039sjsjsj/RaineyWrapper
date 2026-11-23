@@ -19,6 +19,8 @@ object Converter {
         val embed: Boolean,
         /** For external-emulator systems: the chosen emulator first, then fallbacks. */
         val emulators: List<ExternalEmulator> = emptyList(),
+        /** Para juegos web por enlace (Unity): la direccion https que abre el juego. */
+        val url: String? = null,
     )
 
     fun interface Status {
@@ -67,7 +69,7 @@ object Converter {
         }
         status.update("Making the icon…", null)
         spec.replace.putAll(IconMaker.entries(request.title, request.image))
-        val (assets, _) = gameAssets(request.source, request.title, request.embed, request.emulators)
+        val (assets, _) = gameAssets(request.source, request.title, request.embed, request.emulators, request.url)
         spec.assets.addAll(assets)
 
         val unsigned = File(dir, "unsigned.apk")

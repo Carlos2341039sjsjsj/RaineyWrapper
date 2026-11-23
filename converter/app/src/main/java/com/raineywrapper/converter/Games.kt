@@ -33,6 +33,11 @@ data class GameSystem(
      * so the game is always played from where it is: never embedded, never zipped.
      */
     val folderGame: Boolean = false,
+    /**
+     * El juego no esta en el telefono: es una pagina web que la app abre (juegos de Unity que solo se pueden
+     * jugar en el navegador). El .exe elegido solo sirve para ponerle nombre; lo que cuenta es el enlace.
+     */
+    val webUrl: Boolean = false,
 ) {
     val coreLibrary get() = core?.let { "lib${it}_libretro_android.so" }
     val isExternal get() = external.isNotEmpty()
@@ -84,6 +89,7 @@ object Systems {
                 bios = s.optJSONArray("bios")?.strings() ?: emptyList(),
                 biosRequired = s.optBoolean("biosRequired", false),
                 folderGame = s.optBoolean("folderGame", false),
+                webUrl = s.optBoolean("webUrl", false),
             )
         }.toList().also { cache = it }
     }
@@ -186,6 +192,33 @@ object GameMakerPc {
 }
 
 /**
+ * Juegos de PC hechos con Unity (Kenzu y similares): `Juego.exe` junto a `UnityPlayer.dll` y a la carpeta
+ * `Juego_Data`. Esa version es para Windows y no corre en el telefono; lo unico que se puede hacer es abrir
+ * su version web (si el desarrollador la publica) desde un enlace.
+ */
+object UnityPc {
+    fun isGameExe(exe: File): Boolean {
+        if (exe.ext != "exe") return false
+        val files = exe.parentFile?.listFiles() ?: return false
+        val hasPlayer = files.any { it.isFile && it.name.equals("UnityPlayer.dll", ignoreCase = true) }
+        val hasData = files.any { it.isDirectory && it.name.equals(exe.nameWithoutExtension + "_Data", ignoreCase = true) }
+        return hasPlayer && hasData
+    }
+
+    fun looksLikeGame(entryNames: List<String>): Boolean = entryNames.any { File(it).name.equals("UnityPlayer.dll", ignoreCase = true) }
+}
+
+/** Direccion de un juego web: solo https, con un dominio. Si falta el esquema se lo agrega. Null si no sirve. */
+fun normalizeGameUrl(text: String): String? {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty() || trimmed.any { it.isWhitespace() }) return null
+    val withScheme = if (trimmed.contains("://")) trimmed else "https://$trimmed"
+    if (!withScheme.startsWith("https://", ignoreCase = true)) return null
+    val host = runCatching { java.net.URI(withScheme).host }.getOrNull() ?: return null
+    return withScheme.takeIf { host.contains('.') }
+}
+
+/**
  * Juegos RPG Maker MV / MZ empaquetados con NW.js: `Game.exe` es solo el lanzador de Windows y el juego
  * es un index.html con su carpeta js/ (en `www/` para MV, junto al .exe para MZ). Nunca se ejecuta el .exe.
  */
@@ -234,6 +267,7 @@ fun gameFolderName(file: File): String {
 fun systemIdForExe(exe: File): String? = when {
     Rgss3.isGameExe(exe) -> "rgss3"
     GameMakerPc.isGameExe(exe) -> "gamemaker"
+    UnityPc.isGameExe(exe) -> "unityweb"
     else -> null
 }
 
@@ -307,6 +341,7 @@ sealed class GameSource(val file: File, val system: GameSystem) {
                         "RPG Maker VX Ace: tiene que estar junto a ${file.nameWithoutExtension}.ini y a su .rgss3a " +
                         "(o a Data/Scripts.rvdata2).\n" +
                         "GameMaker: tiene que estar junto a data.win.\n" +
+                        "Unity: tiene que estar junto a UnityPlayer.dll y a su carpeta _Data.\n" +
                         "RPG Maker MV/MZ: tiene que estar junto a su index.html (o a la carpeta www).",
                 )
             }
@@ -333,6 +368,9 @@ sealed class GameSource(val file: File, val system: GameSystem) {
                 }
                 if (GameMakerPc.looksLikeGame(entries.map { it.name })) {
                     throw UserError("${file.name} es un juego de PC (GameMaker).\n\nDescomprimelo primero y elegi su .exe.")
+                }
+                if (UnityPc.looksLikeGame(entries.map { it.name })) {
+                    throw UserError("${file.name} es un juego de PC (Unity).\n\nDescomprimelo primero y elegi su .exe.")
                 }
                 if (entries.any { File(it.name).ext == "cue" }) {
                     throw UserError("${file.name} contains a disc image (.cue).\n\nUnzip it first, then pick the .cue file.")
@@ -413,11 +451,20 @@ private fun regionDigits(romName: String): Set<Char> = when {
 }
 
 /** What goes into assets/game/: game.json plus (when embedding) the ROM files, plus any BIOS files. */
-fun gameAssets(source: GameSource, title: String, embed: Boolean, emulators: List<ExternalEmulator> = emptyList()): Pair<List<ApkPatcher.Asset>, Long> {
+fun gameAssets(
+    source: GameSource,
+    title: String,
+    embed: Boolean,
+    emulators: List<ExternalEmulator> = emptyList(),
+    url: String? = null,
+): Pair<List<ApkPatcher.Asset>, Long> {
     val json = JSONObject()
         .put("title", title)
         .put("system", source.system.id)
         .put("core", source.system.coreLibrary ?: "")
+    if (source.system.webUrl) {
+        json.put("url", url ?: throw UserError("Falta el enlace del juego."))
+    }
     if (emulators.isNotEmpty()) json.put("external", JSONArray(emulators.map { it.toJson() }))
     val assets = mutableListOf<ApkPatcher.Asset>()
 

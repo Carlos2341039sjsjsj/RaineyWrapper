@@ -27,6 +27,8 @@ data class GameConfig(
     val external: List<ExternalEmulator>,
     /** BIOS files bundled under assets/game/system/, as paths relative to the core's system directory. */
     val systemFiles: List<String>,
+    /** Juegos web por enlace (Unity): la pagina que se abre. Vacio en el resto de juegos. */
+    val url: String = "",
 ) {
     data class ExternalEmulator(
         val name: String,
@@ -67,6 +69,7 @@ data class GameConfig(
                     }
                 } ?: emptyList(),
                 systemFiles = obj.optJSONArray("systemFiles")?.let { arr -> List(arr.length()) { arr.getString(it) } } ?: emptyList(),
+                url = obj.optString("url", ""),
             )
         }
     }

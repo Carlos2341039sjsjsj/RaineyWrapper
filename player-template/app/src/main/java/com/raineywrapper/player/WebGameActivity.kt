@@ -29,6 +29,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
+import java.util.zip.GZIPInputStream
 
 /**
  * Juegos HTML5 (RPG Maker MV / MZ): se sirven desde la carpeta del juego a un WebView, con los controles
@@ -108,6 +109,18 @@ class WebGameActivity : ComponentActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun startWeb() {
+        if (usesBrotli()) {
+            dialog = AlertDialog.Builder(this)
+                .setTitle(config.title)
+                .setMessage(
+                    "Este build de Unity usa compresion Brotli (.br), que todavia no es compatible.\n\n" +
+                        "Pedile al desarrollador un build con compresion Gzip o sin compresion.",
+                )
+                .setCancelable(false)
+                .setPositiveButton("Salir") { _, _ -> finishAffinity() }
+                .show()
+            return
+        }
         val view = WebView(this)
         web = view
         view.setBackgroundColor(Color.BLACK)
@@ -135,6 +148,8 @@ class WebGameActivity : ComponentActivity() {
         ).also {
             // Lo que no es un control (tocar el mapa, los menus) pasa directo al juego.
             it.onPass = { ev -> view.dispatchTouchEvent(ev) }
+            // Los juegos de Unity WebGL traen sus controles: los de RPG Maker (flechas, Z, X) empiezan ocultos.
+            if (isUnityWebGl()) it.visibility = View.GONE
             container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
         view.loadUrl("https://$HOST/" + Uri.encode(indexName))
@@ -171,12 +186,31 @@ class WebGameActivity : ComponentActivity() {
             false
         }
         if (!ok) return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
-        val ext = file.extension.lowercase()
+        // Builds web de Unity con compresion Gzip (Kenzu.data.gz, Kenzu.wasm.gz...): un servidor los manda con
+        // "Content-Encoding: gzip", pero aca no hay servidor, asi que se descomprimen al servirlos y el tipo
+        // se saca del nombre sin el .gz (.wasm.gz -> application/wasm, .framework.js.gz -> javascript).
+        val gzip = file.extension.equals("gz", ignoreCase = true) && isGzip(file)
+        val ext = (if (gzip) File(file.nameWithoutExtension).extension else file.extension).lowercase()
         val mime = MIME[ext] ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
         val text = mime.startsWith("text/") || mime.endsWith("json") || mime.endsWith("javascript")
         val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
-        return WebResourceResponse(mime, if (text) "utf-8" else null, 200, "OK", headers, FileInputStream(file))
+        val body = if (gzip) GZIPInputStream(FileInputStream(file)) else FileInputStream(file)
+        return WebResourceResponse(mime, if (text) "utf-8" else null, 200, "OK", headers, body)
     }
+
+    private fun isGzip(file: File): Boolean = try {
+        FileInputStream(file).use { it.read() == 0x1f && it.read() == 0x8b }
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun buildFiles(): List<File> = root?.let { File(it, "Build").listFiles()?.toList() }.orEmpty()
+
+    /** Un build web de Unity trae su propio cargador (Build/<nombre>.loader.js) y sus propios controles tactiles. */
+    private fun isUnityWebGl(): Boolean = buildFiles().any { it.name.endsWith(".loader.js", ignoreCase = true) }
+
+    /** La compresion Brotli (.br) necesita un descompresor que todavia no esta en la app. */
+    private fun usesBrotli(): Boolean = buildFiles().any { it.name.endsWith(".br", ignoreCase = true) }
 
     private fun showMenu() {
         if (dialog?.isShowing == true) return
