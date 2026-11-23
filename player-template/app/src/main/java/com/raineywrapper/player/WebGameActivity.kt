@@ -32,11 +32,11 @@ import java.io.FileInputStream
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.util.zip.GZIPInputStream
-import java.util.zip.GZIPInputStream
 
 /**
- * Juegos HTML5 (RPG Maker MV / MZ): se sirven desde la carpeta del juego a un WebView, con los controles
- * en pantalla convertidos en teclas. Las partidas se guardan en el localStorage del WebView.
+ * Juegos HTML5 (RPG Maker MV / MZ, Unity WebGL, novelas visuales web, plataformas) y Flash (.swf, con Ruffle):
+ * se sirven desde la carpeta del juego a un WebView, con los controles en pantalla convertidos en teclas.
+ * Las partidas se guardan en el localStorage del WebView.
  */
 class WebGameActivity : ComponentActivity() {
     private lateinit var container: FrameLayout
@@ -145,20 +145,72 @@ class WebGameActivity : ComponentActivity() {
         }
         container.addView(view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
-        setupOverlay()
+        // Los juegos de Unity WebGL traen sus controles: los de teclado empiezan ocultos.
+        setupOverlay(hidden = isUnityWebGl())
         view.loadUrl("https://$HOST/" + (if (isSwf()) "__swf.html" else Uri.encode(indexName)))
         view.requestFocus()
     }
 
-    private fun isSwf() = indexName.endsWith(".swf", ignoreCase = true)
+    // ---------------------------------------------------------------- controles en pantalla
 
-    private fun webHeaders() = mutableMapOf(
-        "Access-Control-Allow-Origin" to "*",
-        "Cross-Origin-Resource-Policy" to "cross-origin",
-        "Cross-Origin-Opener-Policy" to "same-origin",
-        "Cross-Origin-Embedder-Policy" to "credentialless",
-        "Cache-Control" to "no-cache",
-    )
+    private fun modeKey() = "mode_" + config.rom.hashCode()
+
+    /** Controles guardados para este juego; si no hay, se adivinan por los archivos de la carpeta. */
+    private fun pickMode(): String {
+        val saved = prefs.getString(modeKey(), null)
+        if (saved != null && saved in MODES) return saved
+        if (isSwf()) return "webplat"
+        val dir = root ?: return "webplat"
+        if (File(dir, "js/rpg_core.js").isFile || File(dir, "js/rmmz_core.js").isFile || File(dir, "js/rpg_managers.js").isFile) return "rpgmv"
+        if (isUnityWebGl()) return "webplat2"
+        val head = try {
+            File(dir, indexName).inputStream().use { input ->
+                val buf = ByteArray(200_000)
+                val n = input.read(buf)
+                String(buf, 0, maxOf(n, 0)).lowercase()
+            }
+        } catch (e: Exception) {
+            ""
+        }
+        val novel = File(dir, "tyrano").isDirectory || File(dir, "renpy.wasm").isFile || File(dir, "renpy.js").isFile ||
+            head.contains("tw-storydata") || head.contains("monogatari") || head.contains("renpy") || head.contains("tyrano")
+        return if (novel) "webvn" else "webplat"
+    }
+
+    private fun modeLabel(m: String) = when (m) {
+        "rpgmv" -> "Teclado RPG (Z/X)"
+        "webplat" -> "Plataformas (Z/X/C)"
+        "webplat2" -> "Accion (ESPACIO/J/H/L)"
+        "webvn" -> "Novela visual"
+        else -> "Ninguno (solo tactil)"
+    }
+
+    private fun setupOverlay(hidden: Boolean = false) {
+        overlay?.let { container.removeView(it) }
+        overlay = null
+        val view = web ?: return
+        if (mode == "none") return
+        overlay = TouchOverlay(
+            this, TouchOverlay.layoutFor(mode),
+            onKey = { action, key -> sendKey(action, key) },
+            onAnalog = { _, _, _ -> },
+            onMenu = { showMenu() },
+        ).also {
+            // Lo que no es un control (tocar el mapa, los menus) pasa directo al juego.
+            it.onPass = { ev -> view.dispatchTouchEvent(ev) }
+            if (hidden) it.visibility = View.GONE
+            container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        }
+    }
+
+    private fun sendKey(action: Int, key: Int) {
+        val t = SystemClock.uptimeMillis()
+        web?.dispatchKeyEvent(KeyEvent(t, t, action, key, 0))
+    }
+
+    // ---------------------------------------------------------------- Flash (Ruffle)
+
+    private fun isSwf() = indexName.endsWith(".swf", ignoreCase = true)
 
     private fun notFound() = WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
 
@@ -184,7 +236,8 @@ window.addEventListener("DOMContentLoaded", function () {
   player.ruffle().load("/${Uri.encode(indexName)}");
 });
 </script></body></html>"""
-        return WebResourceResponse("text/html", "utf-8", 200, "OK", webHeaders(), ByteArrayInputStream(html.toByteArray()))
+        val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
+        return WebResourceResponse("text/html", "utf-8", 200, "OK", headers, ByteArrayInputStream(html.toByteArray()))
     }
 
     /** Archivos de Ruffle guardados en los assets del APK. */
@@ -195,66 +248,18 @@ window.addEventListener("DOMContentLoaded", function () {
             val ext = name.substringAfterLast('.', "").lowercase()
             val mime = MIME[ext] ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
             val text = mime.startsWith("text/") || mime.endsWith("javascript") || mime.endsWith("json")
-            WebResourceResponse(mime, if (text) "utf-8" else null, 200, "OK", webHeaders(), assets.open("ruffle/$name"))
+            val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
+            WebResourceResponse(mime, if (text) "utf-8" else null, 200, "OK", headers, assets.open("ruffle/$name"))
         } catch (e: Exception) {
             notFound()
         }
     }
 
-    private fun modeKey() = "mode_" + config.rom.hashCode()
-
-    /** Controles guardados para este juego; si no hay, se adivinan por los archivos de la carpeta. */
-    private fun pickMode(): String {
-        val saved = try { getSharedPreferences("rainey_web", MODE_PRIVATE).getString(modeKey(), null) } catch (e: Exception) { null }
-        if (saved != null && saved in MODES) return saved
-        if (isSwf()) return "webplat"
-        val dir = root ?: return "webplat"
-        if (File(dir, "js/rpg_core.js").isFile || File(dir, "js/rmmz_core.js").isFile || File(dir, "js/rpg_managers.js").isFile) return "rpgmv"
-        val head = try {
-            File(dir, indexName).inputStream().use { input ->
-                val buf = ByteArray(200_000)
-                val n = input.read(buf)
-                String(buf, 0, maxOf(n, 0)).lowercase()
-            }
-        } catch (e: Exception) { "" }
-        val novel = File(dir, "tyrano").isDirectory || File(dir, "renpy.wasm").isFile || File(dir, "renpy.js").isFile ||
-            head.contains("tw-storydata") || head.contains("monogatari") || head.contains("renpy") || head.contains("tyrano")
-        return if (novel) "webvn" else "webplat"
-    }
-
-    private fun modeLabel(m: String) = when (m) {
-        "rpgmv" -> "Teclado RPG (Z/X)"
-        "webplat" -> "Plataformas (Z/X/C)"
-        "webplat2" -> "Accion (ESPACIO/J/H/L)"
-        "webvn" -> "Novela visual"
-        else -> "Ninguno (solo tactil)"
-    }
-
-    private fun setupOverlay() {
-        overlay?.let { container.removeView(it) }
-        overlay = null
-        val view = web ?: return
-        if (mode == "none") return
-        overlay = TouchOverlay(
-            this, TouchOverlay.layoutFor(mode),
-            onKey = { action, key -> sendKey(action, key) },
-            onAnalog = { _, _, _ -> },
-            onMenu = { showMenu() },
-        ).also {
-            // Lo que no es un control (tocar el mapa, los menus) pasa directo al juego.
-            it.onPass = { ev -> view.dispatchTouchEvent(ev) }
-            container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-        }
-    }
-
-    private fun sendKey(action: Int, key: Int) {
-        val t = SystemClock.uptimeMillis()
-        web?.dispatchKeyEvent(KeyEvent(t, t, action, key, 0))
-    }
+    // ---------------------------------------------------------------- servidor de archivos
 
     /**
      * Sirve los archivos de la carpeta del juego como https://HOST/..., sin salir de esa carpeta.
-     * Entiende pedidos por rangos (audio / video) y entrega descomprimido lo que viene en .gz (builds de Unity / Godot).
+     * Entiende pedidos por rangos (audio / video) y descomprime los .gz (builds de Unity).
      */
     private fun serve(uri: Uri, req: Map<String, String>): WebResourceResponse? {
         if (uri.host != HOST) return null
@@ -263,7 +268,6 @@ window.addEventListener("DOMContentLoaded", function () {
         if (rel == "__swf.html" && isSwf()) return swfPage()
         if (rel.startsWith("__ruffle/")) return ruffleAsset(rel.removePrefix("__ruffle/"))
         var file = File(base, rel.ifEmpty { indexName })
-        if (file.isDirectory) file = File(file, "index.html")
         if (!file.isFile) {
             val alt = when (file.extension.lowercase()) {
                 "m4a" -> "ogg"
@@ -277,37 +281,24 @@ window.addEventListener("DOMContentLoaded", function () {
                 if (other.isFile) file = other
             }
         }
-        var gz = file.isFile && file.name.endsWith(".gz", ignoreCase = true)
-        if (!file.isFile) {
-            val packed = File(file.path + ".gz")
-            if (packed.isFile) { file = packed; gz = true }
-        }
         val ok = try {
             file.isFile && file.canonicalPath.startsWith(base.canonicalPath + File.separator)
         } catch (e: Exception) {
             false
         }
-        if (!ok) return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
-        val name = if (gz) file.name.dropLast(3) else file.name
-        val ext = name.substringAfterLast('.', "").lowercase()
+        if (!ok) return notFound()
+        // Builds web de Unity con compresion Gzip (Kenzu.data.gz, Kenzu.wasm.gz...): un servidor los manda con
+        // "Content-Encoding: gzip", pero aca no hay servidor, asi que se descomprimen al servirlos y el tipo
+        // se saca del nombre sin el .gz (.wasm.gz -> application/wasm, .framework.js.gz -> javascript).
+        val gzip = file.extension.equals("gz", ignoreCase = true) && isGzip(file)
+        val ext = (if (gzip) File(file.nameWithoutExtension).extension else file.extension).lowercase()
         val mime = MIME[ext] ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
         val text = mime.startsWith("text/") || mime.endsWith("json") || mime.endsWith("javascript")
         val enc = if (text) "utf-8" else null
-        val headers = mutableMapOf(
-            "Access-Control-Allow-Origin" to "*",
-            "Cross-Origin-Resource-Policy" to "cross-origin",
-            "Cross-Origin-Opener-Policy" to "same-origin",
-            "Cross-Origin-Embedder-Policy" to "credentialless",
-            "Cache-Control" to "no-cache",
-        )
-        if (gz) {
-            val stream: InputStream = try {
-                GZIPInputStream(FileInputStream(file), 65536)
-            } catch (e: Exception) {
-                FileInputStream(file) // se llama .gz pero no lo esta
-            }
-            return WebResourceResponse(mime, enc, 200, "OK", headers, stream)
-        }
+        val headers = mutableMapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
+        if (gzip) return WebResourceResponse(mime, enc, 200, "OK", headers, GZIPInputStream(FileInputStream(file)))
+
+        // Pedido por rango ("Range: bytes=a-b"): lo usan el audio y el video de muchos juegos web.
         val len = file.length()
         val range = req["Range"] ?: req["range"]
         val m = range?.let { Regex("""bytes=(\d*)-(\d*)""").matchEntire(it.trim()) }
@@ -331,11 +322,32 @@ window.addEventListener("DOMContentLoaded", function () {
         return WebResourceResponse(mime, enc, 200, "OK", headers, FileInputStream(file))
     }
 
+    private fun isGzip(file: File): Boolean = try {
+        FileInputStream(file).use { it.read() == 0x1f && it.read() == 0x8b }
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun buildFiles(): List<File> = root?.let { File(it, "Build").listFiles()?.toList() }.orEmpty()
+
+    /** Un build web de Unity trae su propio cargador (Build/<nombre>.loader.js) y sus propios controles tactiles. */
+    private fun isUnityWebGl(): Boolean = buildFiles().any { it.name.endsWith(".loader.js", ignoreCase = true) }
+
+    /** La compresion Brotli (.br) necesita un descompresor que todavia no esta en la app. */
+    private fun usesBrotli(): Boolean = buildFiles().any { it.name.endsWith(".br", ignoreCase = true) }
+
+    // ---------------------------------------------------------------- menu y mover el juego
+
     private fun showMenu() {
         if (dialog?.isShowing == true) return
         val controls = overlay?.visibility == View.VISIBLE
-        val canMove = !isMoved()
-        val labels = mutableListOf("Continuar", "Controles en pantalla: " + (if (controls) "si" else "no"), "Tipo de controles: " + modeLabel(mode), "Recargar el juego")
+        val canMove = !isMoved() && !isSwf()
+        val labels = mutableListOf(
+            "Continuar",
+            "Controles en pantalla: " + (if (controls) "si" else "no"),
+            "Tipo de controles: " + modeLabel(mode),
+            "Recargar el juego",
+        )
         if (canMove) labels += "Mover el juego dentro de la app (borrar el original)"
         labels += "Salir"
         dialog = AlertDialog.Builder(this)
@@ -344,9 +356,10 @@ window.addEventListener("DOMContentLoaded", function () {
                 when {
                     which == 1 -> overlay?.visibility = if (controls) View.GONE else View.VISIBLE
                     which == 2 -> {
+                        val hidden = overlay?.visibility == View.GONE
                         mode = MODES[(MODES.indexOf(mode) + 1) % MODES.size]
-                        try { getSharedPreferences("rainey_web", MODE_PRIVATE).edit().putString(modeKey(), mode).apply() } catch (e: Exception) { }
-                        setupOverlay()
+                        prefs.edit().putString(modeKey(), mode).apply()
+                        setupOverlay(hidden)
                     }
                     which == 3 -> web?.reload()
                     canMove && which == 4 -> confirmMove()
@@ -434,8 +447,8 @@ window.addEventListener("DOMContentLoaded", function () {
 
     private companion object {
         const val HOST = "rainey.game"
-        val MODES = listOf("rpgmv", "webplat", "webplat2", "webvn", "none")
         const val KEY_MOVED = "moved_root"
+        val MODES = listOf("rpgmv", "webplat", "webplat2", "webvn", "none")
         val MIME = mapOf(
             "js" to "text/javascript", "mjs" to "text/javascript", "json" to "application/json", "wasm" to "application/wasm",
             "ogg" to "audio/ogg", "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav",
