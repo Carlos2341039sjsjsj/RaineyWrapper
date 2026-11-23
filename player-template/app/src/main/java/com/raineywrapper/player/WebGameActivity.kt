@@ -47,6 +47,7 @@ class WebGameActivity : ComponentActivity() {
     private var indexName = "index.html"
     private var dialog: AlertDialog? = null
     private var mode = "rpgmv"
+    private var fit = false
     private val prefs get() = getSharedPreferences("web_game", MODE_PRIVATE)
 
     private fun isMoved() = prefs.getString(KEY_MOVED, null)?.let { File(it, indexName).isFile } == true
@@ -63,6 +64,7 @@ class WebGameActivity : ComponentActivity() {
         val moved = prefs.getString(KEY_MOVED, null)?.let { File(it) }?.takeIf { File(it, indexName).isFile }
         root = moved ?: index.parentFile
         mode = pickMode()
+        fit = prefs.getBoolean(fitKey(), isSwf())
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = showMenu()
         })
@@ -143,7 +145,7 @@ class WebGameActivity : ComponentActivity() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 serve(request.url, request.requestHeaders ?: emptyMap())
         }
-        container.addView(view, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        container.addView(view, webParams())
 
         // Los juegos de Unity WebGL traen sus controles: los de teclado empiezan ocultos.
         setupOverlay(hidden = isUnityWebGl())
@@ -153,13 +155,34 @@ class WebGameActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- controles en pantalla
 
+    private fun fitKey() = "fit_" + config.rom.hashCode()
+
+    /** Con "entre controles" el juego ocupa el centro y los botones quedan a los costados, sin tapar su pantalla. */
+    private fun webParams(): FrameLayout.LayoutParams {
+        val lp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        val dm = resources.displayMetrics
+        if (fit && dm.widthPixels > dm.heightPixels) {
+            val m = (dm.widthPixels * 0.19f).toInt()
+            lp.setMargins(m, 0, m, 0)
+        }
+        return lp
+    }
+
+    private fun swfQuality() = prefs.getString("swf_quality", "medium").let { if (it == "low" || it == "high") it else "medium" }
+
+    private fun qualityLabel() = when (swfQuality()) {
+        "low" -> "Baja (mas rapido)"
+        "high" -> "Alta"
+        else -> "Media"
+    }
+
     private fun modeKey() = "mode_" + config.rom.hashCode()
 
     /** Controles guardados para este juego; si no hay, se adivinan por los archivos de la carpeta. */
     private fun pickMode(): String {
         val saved = prefs.getString(modeKey(), null)
         if (saved != null && saved in MODES) return saved
-        if (isSwf()) return "webplat"
+        if (isSwf()) return if (indexName.contains("superfighter", ignoreCase = true)) "webfight" else "webplat"
         val dir = root ?: return "webplat"
         if (File(dir, "js/rpg_core.js").isFile || File(dir, "js/rmmz_core.js").isFile || File(dir, "js/rpg_managers.js").isFile) return "rpgmv"
         if (isUnityWebGl()) return "webplat2"
@@ -182,6 +205,7 @@ class WebGameActivity : ComponentActivity() {
         "webplat" -> "Plataformas (Z/X/C)"
         "webplat2" -> "Accion (ESPACIO/J/H/L)"
         "webvn" -> "Novela visual"
+        "webfight" -> "Combate (N/M/coma/punto)"
         else -> "Ninguno (solo tactil)"
     }
 
@@ -197,7 +221,10 @@ class WebGameActivity : ComponentActivity() {
             onMenu = { showMenu() },
         ).also {
             // Lo que no es un control (tocar el mapa, los menus) pasa directo al juego.
-            it.onPass = { ev -> view.dispatchTouchEvent(ev) }
+            it.onPass = { ev ->
+                ev.offsetLocation(-view.left.toFloat(), -view.top.toFloat())
+                view.dispatchTouchEvent(ev)
+            }
             if (hidden) it.visibility = View.GONE
             container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         }
@@ -222,7 +249,7 @@ class WebGameActivity : ComponentActivity() {
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100vw;height:100vh}</style>
 <script>
 window.RufflePlayer = window.RufflePlayer || {};
-window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false };
+window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, quality: "${swfQuality()}" };
 </script>
 <script src="/__ruffle/ruffle.js"></script>
 </head><body><div id="p"></div>
@@ -342,30 +369,35 @@ window.addEventListener("DOMContentLoaded", function () {
         if (dialog?.isShowing == true) return
         val controls = overlay?.visibility == View.VISIBLE
         val canMove = !isMoved() && !isSwf()
-        val labels = mutableListOf(
-            "Continuar",
-            "Controles en pantalla: " + (if (controls) "si" else "no"),
-            "Tipo de controles: " + modeLabel(mode),
-            "Recargar el juego",
-        )
-        if (canMove) labels += "Mover el juego dentro de la app (borrar el original)"
-        labels += "Salir"
+        val items = mutableListOf<Pair<String, () -> Unit>>()
+        items.add("Continuar" to { })
+        items.add("Controles en pantalla: " + (if (controls) "si" else "no") to {
+            overlay?.visibility = if (controls) View.GONE else View.VISIBLE
+        })
+        items.add("Tipo de controles: " + modeLabel(mode) to {
+            val hidden = overlay?.visibility == View.GONE
+            mode = MODES[(MODES.indexOf(mode) + 1) % MODES.size]
+            prefs.edit().putString(modeKey(), mode).apply()
+            setupOverlay(hidden)
+        })
+        items.add("Pantalla: " + (if (fit) "entre los controles" else "completa") to {
+            fit = !fit
+            prefs.edit().putBoolean(fitKey(), fit).apply()
+            web?.layoutParams = webParams()
+        })
+        if (isSwf()) {
+            items.add("Calidad de Flash: " + qualityLabel() to {
+                val next = when (swfQuality()) { "low" -> "medium"; "medium" -> "high"; else -> "low" }
+                prefs.edit().putString("swf_quality", next).apply()
+                web?.reload()
+            })
+        }
+        items.add("Recargar el juego" to { web?.reload() })
+        if (canMove) items.add("Mover el juego dentro de la app (borrar el original)" to { confirmMove() })
+        items.add("Salir" to { finishAffinity() })
         dialog = AlertDialog.Builder(this)
             .setTitle(config.title)
-            .setItems(labels.toTypedArray()) { _, which ->
-                when {
-                    which == 1 -> overlay?.visibility = if (controls) View.GONE else View.VISIBLE
-                    which == 2 -> {
-                        val hidden = overlay?.visibility == View.GONE
-                        mode = MODES[(MODES.indexOf(mode) + 1) % MODES.size]
-                        prefs.edit().putString(modeKey(), mode).apply()
-                        setupOverlay(hidden)
-                    }
-                    which == 3 -> web?.reload()
-                    canMove && which == 4 -> confirmMove()
-                    which == labels.lastIndex -> finishAffinity()
-                }
-            }
+            .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
             .show()
     }
 
@@ -448,7 +480,7 @@ window.addEventListener("DOMContentLoaded", function () {
     private companion object {
         const val HOST = "rainey.game"
         const val KEY_MOVED = "moved_root"
-        val MODES = listOf("rpgmv", "webplat", "webplat2", "webvn", "none")
+        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webvn", "none")
         val MIME = mapOf(
             "js" to "text/javascript", "mjs" to "text/javascript", "json" to "application/json", "wasm" to "application/wasm",
             "ogg" to "audio/ogg", "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav",

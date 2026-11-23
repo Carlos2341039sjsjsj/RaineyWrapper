@@ -96,6 +96,17 @@ class TouchOverlay(
                 keyboard = true,
             )
             // Novelas visuales web (RenPy, TyranoScript, Twine...): se toca la pantalla; botones para avanzar, auto, saltar y volver.
+            // Superfighters y juegos de combate parecidos: flechas + N (golpe), M (disparo), coma (granada), punto (camara lenta).
+            "webfight" -> Layout(
+                listOf(
+                    Face("M", KeyEvent.KEYCODE_M, 0f, -0.6f), Face("N", KeyEvent.KEYCODE_N, 0.6f, 0f),
+                    Face(",", KeyEvent.KEYCODE_COMMA, 0f, 0.6f), Face(".", KeyEvent.KEYCODE_PERIOD, -0.6f, 0f),
+                ),
+                emptyList(),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
+                keyboard = true,
+            )
             "webvn" -> Layout(
                 listOf(Face("ENTER", KeyEvent.KEYCODE_ENTER, 0f, 0f)),
                 listOf(
