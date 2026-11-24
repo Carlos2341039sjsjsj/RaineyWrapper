@@ -67,7 +67,7 @@ class WebGameActivity : ComponentActivity() {
         val moved = prefs.getString(KEY_MOVED, null)?.let { File(it) }?.takeIf { File(it, indexName).isFile }
         root = moved ?: index.parentFile
         mode = pickMode()
-        fit = prefs.getBoolean(fitKey(), isSwf())
+        fit = prefs.getBoolean(fitKey(), false)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = showMenu()
         })
@@ -177,8 +177,17 @@ class WebGameActivity : ComponentActivity() {
     // Calidad de dibujo de Ruffle: baja (sin suavizado de bordes) arranca como predeterminada, es lo mas liviano.
     private fun swfQuality() = prefs.getString("swf_quality", "low").let { if (it == "medium" || it == "high") it else "low" }
 
-    /** Resolucion a la que Ruffle dibuja (100, 75 o 50 % de la pantalla): menos pixeles, mas velocidad; se estira para llenarla. */
-    private fun swfScale() = prefs.getInt("swf_scale", 75).let { if (it == 100 || it == 50) it else 75 }
+    /** Motor con el que Ruffle dibuja: automatico, canvas 2D o WebGL (para probar cual anda mejor en cada equipo). */
+    private fun swfRenderer() = prefs.getString("swf_renderer", "auto").let { if (it == "canvas" || it == "webgl") it else "auto" }
+
+    private fun rendererLabel() = when (swfRenderer()) {
+        "canvas" -> "Canvas"
+        "webgl" -> "WebGL"
+        else -> "Automatico"
+    }
+
+    /** Flechas del juego Flash: se mandan como eventos de teclado desde JavaScript (las del WebView pueden perder el foco). */
+    private fun jsArrows() = isSwf() && prefs.getBoolean("swf_js_arrows", true)
 
     private fun swfFps() = prefs.getBoolean("swf_fps", false)
 
@@ -260,6 +269,17 @@ class WebGameActivity : ComponentActivity() {
             return
         }
         if (action == KeyEvent.ACTION_DOWN) downKeys.add(key) else downKeys.remove(key)
+        val arrow = when (key) {
+            KeyEvent.KEYCODE_DPAD_UP -> "ArrowUp"
+            KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown"
+            KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft"
+            KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight"
+            else -> null
+        }
+        if (arrow != null && jsArrows()) {
+            web?.evaluateJavascript("window.__rk&&window.__rk('$arrow'," + (if (action == KeyEvent.ACTION_DOWN) "1" else "0") + ")", null)
+            return
+        }
         val t = SystemClock.uptimeMillis()
         web?.dispatchKeyEvent(KeyEvent(t, t, action, key, 0))
     }
@@ -277,26 +297,29 @@ class WebGameActivity : ComponentActivity() {
 
     /** Pagina que abre el .swf con Ruffle (reproductor de Flash que viaja dentro del APK, en assets/ruffle). */
     private fun swfPage(): WebResourceResponse {
-        val pct = swfScale()
-        val box = pct.toDouble() // el contenedor se achica (menos pixeles para dibujar) y despues se estira a toda la pantalla
+        val renderer = if (swfRenderer() == "auto") "" else ", preferredRenderer: \"" + swfRenderer() + "\""
+        // Contador de FPS (los de la pantalla) y teclas que la pagina ve apretadas: sirve para medir y para cazar teclas pegadas.
         val fpsJs = if (swfFps()) """
 <script>
 (function () {
   var d = document.createElement('div');
   d.style.cssText = 'position:fixed;left:50%;top:2px;transform:translateX(-50%);font:12px monospace;color:#0f0;background:rgba(0,0,0,.6);padding:1px 6px;z-index:99;pointer-events:none';
   document.body.appendChild(d);
-  var n = 0, t = performance.now();
-  function f(now) { n++; if (now - t >= 1000) { d.textContent = Math.round(n * 1000 / (now - t)) + ' FPS'; n = 0; t = now; } requestAnimationFrame(f); }
+  var n = 0, t = performance.now(), fps = 0, down = {};
+  window.addEventListener('keydown', function (e) { down[e.code] = 1; }, true);
+  window.addEventListener('keyup', function (e) { delete down[e.code]; }, true);
+  function f(now) { n++; if (now - t >= 1000) { fps = Math.round(n * 1000 / (now - t)); n = 0; t = now; } requestAnimationFrame(f); }
   requestAnimationFrame(f);
+  setInterval(function () { d.textContent = fps + ' FPS ' + Object.keys(down).join(' '); }, 100);
 })();
 </script>""" else ""
         val html = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:absolute;left:0;top:0;width:${box}%;height:${box}%;transform:scale(${100.0 / pct});transform-origin:0 0}</style>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100vw;height:100vh}</style>
 <script>
 window.RufflePlayer = window.RufflePlayer || {};
-window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, quality: "${swfQuality()}" };
+window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, quality: "${swfQuality()}"$renderer };
 </script>
 <script src="/__ruffle/ruffle.js"></script>
 </head><body><div id="p"></div>
@@ -306,12 +329,23 @@ window.addEventListener("DOMContentLoaded", function () {
   var player = ruffle.createPlayer();
   player.style.width = "100%";
   player.style.height = "100%";
+  player.tabIndex = 0;
   document.getElementById("p").appendChild(player);
   player.ruffle().load("/${Uri.encode(indexName)}");
+  // Flechas desde los botones de la pantalla: eventos de teclado directos al reproductor.
+  var CODES = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
+  window.__rk = function (code, down) {
+    var init = { key: code, code: code, keyCode: CODES[code], which: CODES[code], bubbles: true, cancelable: true };
+    var type = down ? "keydown" : "keyup";
+    player.dispatchEvent(new KeyboardEvent(type, init));
+    var c = player.shadowRoot && player.shadowRoot.querySelector("canvas");
+    if (c) c.dispatchEvent(new KeyboardEvent(type, init));
+  };
+  // Si el foco se va del reproductor (navegacion con la cruz), se le devuelve: sin foco el juego deja de recibir teclas.
+  setInterval(function () { if (document.activeElement !== player) { try { player.focus(); } catch (e) { } } }, 250);
 });
 </script>$fpsJs</body></html>"""
-        val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
-        return WebResourceResponse("text/html", "utf-8", 200, "OK", headers, ByteArrayInputStream(html.toByteArray()))
+        return WebResourceResponse("text/html", "utf-8", 200, "OK", webHeaders(), ByteArrayInputStream(html.toByteArray()))
     }
 
     /** Archivos de Ruffle guardados en los assets del APK. */
@@ -439,10 +473,14 @@ window.addEventListener("DOMContentLoaded", function () {
                 prefs.edit().putString("swf_quality", next).apply()
                 web?.reload()
             })
-            items.add("Resolucion de Flash: " + swfScale() + "%" to {
-                val next = when (swfScale()) { 100 -> 75; 75 -> 50; else -> 100 }
-                prefs.edit().putInt("swf_scale", next).apply()
+            items.add("Dibujo de Flash (probar): " + rendererLabel() to {
+                val next = when (swfRenderer()) { "auto" -> "canvas"; "canvas" -> "webgl"; else -> "auto" }
+                prefs.edit().putString("swf_renderer", next).apply()
                 web?.reload()
+            })
+            items.add("Flechas: " + (if (jsArrows()) "por JavaScript" else "nativas") to {
+                prefs.edit().putBoolean("swf_js_arrows", !jsArrows()).apply()
+                releaseKeys()
             })
             items.add("Mostrar FPS: " + (if (swfFps()) "si" else "no") to {
                 prefs.edit().putBoolean("swf_fps", !swfFps()).apply()
