@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.StatFs
@@ -55,6 +56,8 @@ class WebGameActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Evita que el equipo baje la velocidad del procesador a los pocos minutos de juego (si lo soporta).
+        try { if (Build.VERSION.SDK_INT >= 24) window.setSustainedPerformanceMode(true) } catch (e: Exception) { }
         container = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         setContentView(container)
         enterImmersiveMode()
@@ -130,6 +133,8 @@ class WebGameActivity : ComponentActivity() {
         }
         val view = WebView(this)
         web = view
+        // El proceso del WebView (donde corre Ruffle) mantiene prioridad alta mientras se juega.
+        try { if (Build.VERSION.SDK_INT >= 26) view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false) } catch (e: Exception) { }
         view.setBackgroundColor(Color.BLACK)
         view.isFocusable = true
         view.isFocusableInTouchMode = true
@@ -168,7 +173,13 @@ class WebGameActivity : ComponentActivity() {
         return lp
     }
 
-    private fun swfQuality() = prefs.getString("swf_quality", "medium").let { if (it == "low" || it == "high") it else "medium" }
+    // Calidad de dibujo de Ruffle: baja (sin suavizado de bordes) arranca como predeterminada, es lo mas liviano.
+    private fun swfQuality() = prefs.getString("swf_quality", "low").let { if (it == "medium" || it == "high") it else "low" }
+
+    /** Resolucion a la que Ruffle dibuja (100, 75 o 50 %): menos pixeles, mas velocidad; se estira a toda la pantalla. */
+    private fun swfScale() = prefs.getInt("swf_scale", 75).let { if (it == 100 || it == 50) it else 75 }
+
+    private fun swfFps() = prefs.getBoolean("swf_fps", false)
 
     private fun qualityLabel() = when (swfQuality()) {
         "low" -> "Baja (mas rapido)"
@@ -243,10 +254,23 @@ class WebGameActivity : ComponentActivity() {
 
     /** Pagina que abre el .swf con Ruffle (reproductor de Flash que viaja dentro del APK, en assets/ruffle). */
     private fun swfPage(): WebResourceResponse {
+        val pct = swfScale()
+        val box = 10000.0 / pct // el contenedor se agranda en % para compensar la reduccion y llenar la pantalla
+        val fpsJs = if (swfFps()) """
+<script>
+(function () {
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:50%;top:2px;transform:translateX(-50%);font:12px monospace;color:#0f0;background:rgba(0,0,0,.6);padding:1px 6px;z-index:99;pointer-events:none';
+  document.body.appendChild(d);
+  var n = 0, t = performance.now();
+  function f(now) { n++; if (now - t >= 1000) { d.textContent = Math.round(n * 1000 / (now - t)) + ' FPS'; n = 0; t = now; } requestAnimationFrame(f); }
+  requestAnimationFrame(f);
+})();
+</script>""" else ""
         val html = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100vw;height:100vh}</style>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:absolute;left:0;top:0;width:${box}%;height:${box}%;transform:scale(${pct / 100.0});transform-origin:0 0}</style>
 <script>
 window.RufflePlayer = window.RufflePlayer || {};
 window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, quality: "${swfQuality()}" };
@@ -262,7 +286,7 @@ window.addEventListener("DOMContentLoaded", function () {
   document.getElementById("p").appendChild(player);
   player.ruffle().load("/${Uri.encode(indexName)}");
 });
-</script></body></html>"""
+</script>$fpsJs</body></html>"""
         val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
         return WebResourceResponse("text/html", "utf-8", 200, "OK", headers, ByteArrayInputStream(html.toByteArray()))
     }
@@ -389,6 +413,15 @@ window.addEventListener("DOMContentLoaded", function () {
             items.add("Calidad de Flash: " + qualityLabel() to {
                 val next = when (swfQuality()) { "low" -> "medium"; "medium" -> "high"; else -> "low" }
                 prefs.edit().putString("swf_quality", next).apply()
+                web?.reload()
+            })
+            items.add("Resolucion de Flash: " + swfScale() + "%" to {
+                val next = when (swfScale()) { 100 -> 75; 75 -> 50; else -> 100 }
+                prefs.edit().putInt("swf_scale", next).apply()
+                web?.reload()
+            })
+            items.add("Mostrar FPS: " + (if (swfFps()) "si" else "no") to {
+                prefs.edit().putBoolean("swf_fps", !swfFps()).apply()
                 web?.reload()
             })
         }

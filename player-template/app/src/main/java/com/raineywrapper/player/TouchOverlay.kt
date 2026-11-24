@@ -825,10 +825,13 @@ class TouchOverlay(
         if (dist <= dpadR * 1.25f && dist > dpadR * 0.15f) {
             val angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())) // 0 = right, 90 = down
             val keys = mutableSetOf<Int>()
-            if (angle in -67.5..67.5) keys += KeyEvent.KEYCODE_DPAD_RIGHT
-            if (angle >= 112.5 || angle <= -112.5) keys += KeyEvent.KEYCODE_DPAD_LEFT
-            if (angle in 22.5..157.5) keys += KeyEvent.KEYCODE_DPAD_DOWN
-            if (angle in -157.5..-22.5) keys += KeyEvent.KEYCODE_DPAD_UP
+            // Teclado web: cada flecha tiene su zona propia y la diagonal es una franja angosta (antes de 45 grados:
+            // un pulgar apenas debajo del eje apretaba ABAJO ademas de DERECHA y el personaje se agachaba en vez de correr).
+            val a = if (webLayout) 51.3 else 67.5
+            if (angle in -a..a) keys += KeyEvent.KEYCODE_DPAD_RIGHT
+            if (angle >= 180 - a || angle <= -(180 - a)) keys += KeyEvent.KEYCODE_DPAD_LEFT
+            if (angle in (90 - a)..(90 + a)) keys += KeyEvent.KEYCODE_DPAD_DOWN
+            if (angle in -(90 + a)..-(90 - a)) keys += KeyEvent.KEYCODE_DPAD_UP
             return keys
         }
         // Slightly enlarged hit boxes make the buttons easier to hit without looking.
