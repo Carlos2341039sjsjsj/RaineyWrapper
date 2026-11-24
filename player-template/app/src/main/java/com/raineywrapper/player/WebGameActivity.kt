@@ -75,7 +75,7 @@ class WebGameActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        web?.let { it.onResume(); return }
+        web?.let { it.onResume(); focusGame(); return }
         if (dialog?.isShowing == true) return
         if (!isMoved() && !Environment.isExternalStorageManager()) {
             dialog = AlertDialog.Builder(this)
@@ -100,6 +100,29 @@ class WebGameActivity : ComponentActivity() {
         startWeb()
     }
 
+    /**
+     * Devuelve el foco al juego (al volver a la app, cerrar el menu o recargar). Ruffle solo lee teclas cuando tiene el foco,
+     * que normalmente le da un toque: se hace uno en el borde de la pantalla, donde no hay nada del juego.
+     */
+    private fun focusGame() {
+        val v = web ?: return
+        v.requestFocus()
+        if (!isSwf()) return
+        v.postDelayed({
+            val w = web ?: return@postDelayed
+            if (w.width <= 0 || w.height <= 0) return@postDelayed
+            val t = SystemClock.uptimeMillis()
+            val x = 3f
+            val y = w.height / 2f
+            val down = android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
+            val up = android.view.MotionEvent.obtain(t, t + 40, android.view.MotionEvent.ACTION_UP, x, y, 0)
+            w.dispatchTouchEvent(down)
+            w.dispatchTouchEvent(up)
+            down.recycle()
+            up.recycle()
+        }, 400)
+    }
+
     override fun onPause() {
         releaseKeys()
         web?.onPause()
@@ -115,7 +138,7 @@ class WebGameActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) enterImmersiveMode() else releaseKeys()
+        if (hasFocus) { enterImmersiveMode(); focusGame() } else releaseKeys()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -150,6 +173,11 @@ class WebGameActivity : ComponentActivity() {
         view.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 serve(request.url, request.requestHeaders ?: emptyMap())
+
+            // Tras recargar (o cerrar el menu) el WebView devuelve el foco al juego: sin foco no le llegan las teclas.
+            override fun onPageFinished(view: WebView, url: String?) {
+                focusGame()
+            }
         }
         container.addView(view, webParams())
 
@@ -523,6 +551,7 @@ window.addEventListener("DOMContentLoaded", function () {
         dialog = AlertDialog.Builder(this)
             .setTitle(config.title)
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+            .setOnDismissListener { focusGame() }
             .show()
     }
 
