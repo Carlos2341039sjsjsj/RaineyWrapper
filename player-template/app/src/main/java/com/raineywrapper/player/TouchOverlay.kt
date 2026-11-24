@@ -102,7 +102,8 @@ class TouchOverlay(
                     Face("M", KeyEvent.KEYCODE_M, 0f, -0.6f), Face("N", KeyEvent.KEYCODE_N, 0.6f, 0f),
                     Face(",", KeyEvent.KEYCODE_COMMA, 0f, 0.6f), Face(".", KeyEvent.KEYCODE_PERIOD, -0.6f, 0f),
                 ),
-                emptyList(),
+                // GRAB = agacharse + golpe (la pantalla del juego lo convierte en dos teclas); SPC = barra espaciadora.
+                listOf("SPC" to KeyEvent.KEYCODE_SPACE, "GRAB" to KeyEvent.KEYCODE_BUTTON_1),
                 selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
                 startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
                 keyboard = true,

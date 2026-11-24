@@ -101,6 +101,7 @@ class WebGameActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        releaseKeys()
         web?.onPause()
         super.onPause()
     }
@@ -114,7 +115,7 @@ class WebGameActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) enterImmersiveMode()
+        if (hasFocus) enterImmersiveMode() else releaseKeys()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -176,7 +177,7 @@ class WebGameActivity : ComponentActivity() {
     // Calidad de dibujo de Ruffle: baja (sin suavizado de bordes) arranca como predeterminada, es lo mas liviano.
     private fun swfQuality() = prefs.getString("swf_quality", "low").let { if (it == "medium" || it == "high") it else "low" }
 
-    /** Resolucion a la que Ruffle dibuja (100, 75 o 50 %): menos pixeles, mas velocidad; se estira a toda la pantalla. */
+    /** Resolucion a la que Ruffle dibuja (100, 75 o 50 % de la pantalla): menos pixeles, mas velocidad; se estira para llenarla. */
     private fun swfScale() = prefs.getInt("swf_scale", 75).let { if (it == 100 || it == 50) it else 75 }
 
     private fun swfFps() = prefs.getBoolean("swf_fps", false)
@@ -241,9 +242,31 @@ class WebGameActivity : ComponentActivity() {
         }
     }
 
+    private val downKeys = mutableSetOf<Int>()
+
     private fun sendKey(action: Int, key: Int) {
+        if (key == KeyEvent.KEYCODE_BUTTON_1) {
+            // AGARRAR (Superfighters): para cambiar de arma hay que agacharse (abajo) y apretar golpe (N) junto al arma.
+            val v = web ?: return
+            if (action == KeyEvent.ACTION_DOWN) {
+                sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_DOWN)
+                v.postDelayed({ sendKey(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_N) }, 70)
+            } else {
+                v.postDelayed({
+                    sendKey(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_N)
+                    sendKey(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_DOWN)
+                }, 150)
+            }
+            return
+        }
+        if (action == KeyEvent.ACTION_DOWN) downKeys.add(key) else downKeys.remove(key)
         val t = SystemClock.uptimeMillis()
         web?.dispatchKeyEvent(KeyEvent(t, t, action, key, 0))
+    }
+
+    /** Suelta todas las teclas apretadas: si se abre un menu o la app pasa a segundo plano, el personaje no queda caminando solo. */
+    private fun releaseKeys() {
+        for (k in downKeys.toList()) sendKey(KeyEvent.ACTION_UP, k)
     }
 
     // ---------------------------------------------------------------- Flash (Ruffle)
@@ -255,7 +278,7 @@ class WebGameActivity : ComponentActivity() {
     /** Pagina que abre el .swf con Ruffle (reproductor de Flash que viaja dentro del APK, en assets/ruffle). */
     private fun swfPage(): WebResourceResponse {
         val pct = swfScale()
-        val box = 10000.0 / pct // el contenedor se agranda en % para compensar la reduccion y llenar la pantalla
+        val box = pct.toDouble() // el contenedor se achica (menos pixeles para dibujar) y despues se estira a toda la pantalla
         val fpsJs = if (swfFps()) """
 <script>
 (function () {
@@ -270,7 +293,7 @@ class WebGameActivity : ComponentActivity() {
         val html = """<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:absolute;left:0;top:0;width:${box}%;height:${box}%;transform:scale(${pct / 100.0});transform-origin:0 0}</style>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{position:absolute;left:0;top:0;width:${box}%;height:${box}%;transform:scale(${100.0 / pct});transform-origin:0 0}</style>
 <script>
 window.RufflePlayer = window.RufflePlayer || {};
 window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, quality: "${swfQuality()}" };
@@ -391,6 +414,7 @@ window.addEventListener("DOMContentLoaded", function () {
 
     private fun showMenu() {
         if (dialog?.isShowing == true) return
+        releaseKeys()
         val controls = overlay?.visibility == View.VISIBLE
         val canMove = !isMoved() && !isSwf()
         val items = mutableListOf<Pair<String, () -> Unit>>()
