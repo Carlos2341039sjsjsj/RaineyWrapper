@@ -108,19 +108,21 @@ class WebGameActivity : ComponentActivity() {
         val v = web ?: return
         v.requestFocus()
         if (!isSwf()) return
-        v.postDelayed({
-            val w = web ?: return@postDelayed
-            if (w.width <= 0 || w.height <= 0) return@postDelayed
-            val t = SystemClock.uptimeMillis()
-            val x = 3f
-            val y = w.height / 2f
-            val down = android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
-            val up = android.view.MotionEvent.obtain(t, t + 40, android.view.MotionEvent.ACTION_UP, x, y, 0)
-            w.dispatchTouchEvent(down)
-            w.dispatchTouchEvent(up)
-            down.recycle()
-            up.recycle()
-        }, 400)
+        for (delay in longArrayOf(400, 1500, 3500, 7000)) {
+            v.postDelayed({
+                val w = web ?: return@postDelayed
+                if (w.width <= 0 || w.height <= 0) return@postDelayed
+                val t = SystemClock.uptimeMillis()
+                val x = 3f
+                val y = w.height / 2f
+                val down = android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, x, y, 0)
+                val up = android.view.MotionEvent.obtain(t, t + 40, android.view.MotionEvent.ACTION_UP, x, y, 0)
+                w.dispatchTouchEvent(down)
+                w.dispatchTouchEvent(up)
+                down.recycle()
+                up.recycle()
+            }, delay)
+        }
     }
 
     override fun onPause() {
@@ -185,6 +187,16 @@ class WebGameActivity : ComponentActivity() {
         setupOverlay(hidden = isUnityWebGl())
         view.loadUrl("https://$HOST/" + (if (isSwf()) "__swf.html" else Uri.encode(indexName)))
         view.requestFocus()
+        val imeHider = object : Runnable {
+            override fun run() {
+                val w = web ?: return
+                if (!w.allowIme) {
+                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(w.windowToken, 0)
+                }
+                w.postDelayed(this, 400)
+            }
+        }
+        view.postDelayed(imeHider, 400)
     }
 
     // ---------------------------------------------------------------- controles en pantalla
@@ -391,6 +403,15 @@ window.addEventListener("DOMContentLoaded", function () {
     var c = player.shadowRoot && player.shadowRoot.querySelector("canvas");
     if (c) c.dispatchEvent(new KeyboardEvent(type, init));
   };
+  // Ruffle crea campos de texto ocultos cuando el juego tiene un cuadro de texto: se les quita el teclado del celular.
+  setInterval(function () {
+    var roots = [document, player.shadowRoot];
+    for (var i = 0; i < roots.length; i++) {
+      if (!roots[i]) continue;
+      var els = roots[i].querySelectorAll("input,textarea");
+      for (var j = 0; j < els.length; j++) els[j].setAttribute("inputmode", "none");
+    }
+  }, 300);
   // Si el foco se va del reproductor (navegacion con la cruz), se le devuelve: sin foco el juego deja de recibir teclas.
   setInterval(function () { if (document.activeElement !== player) { try { player.focus(); } catch (e) { } } }, 250);
 });
