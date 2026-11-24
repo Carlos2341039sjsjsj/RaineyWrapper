@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import android.webkit.JavascriptInterface
 import android.webkit.MimeTypeMap
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -125,6 +126,13 @@ class WebGameActivity : ComponentActivity() {
         }
     }
 
+    inner class SwfBridge {
+        @JavascriptInterface
+        fun ready() {
+            runOnUiThread { focusGame() }
+        }
+    }
+
     override fun onPause() {
         releaseKeys()
         web?.onPause()
@@ -172,6 +180,8 @@ class WebGameActivity : ComponentActivity() {
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
         }
+        // La pagina de Ruffle avisa cuando el juego ya cargo, para devolverle el foco justo entonces.
+        if (isSwf()) view.addJavascriptInterface(SwfBridge(), "RaineyNative")
         view.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                 serve(request.url, request.requestHeaders ?: emptyMap())
@@ -394,7 +404,13 @@ window.addEventListener("DOMContentLoaded", function () {
   player.style.height = "100%";
   player.tabIndex = 0;
   document.getElementById("p").appendChild(player);
-  player.ruffle().load("/${Uri.encode(indexName)}");
+  var notified = 0;
+  function ready() {
+    if (notified < 3 && window.RaineyNative) { notified++; window.RaineyNative.ready(); }
+  }
+  player.addEventListener("loadedmetadata", ready);
+  var res = player.ruffle().load("/${Uri.encode(indexName)}");
+  if (res && res.then) res.then(ready, function () { });
   // Teclas desde los botones de la pantalla: eventos de teclado directos al reproductor.
   window.__rk = function (key, code, kc, down) {
     var init = { key: key, code: code, keyCode: kc, which: kc, bubbles: true, cancelable: true };
