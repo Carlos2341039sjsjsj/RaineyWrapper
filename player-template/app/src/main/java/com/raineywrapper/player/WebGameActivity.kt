@@ -42,7 +42,7 @@ import java.util.zip.GZIPInputStream
 class WebGameActivity : ComponentActivity() {
     private lateinit var container: FrameLayout
     private lateinit var config: GameConfig
-    private var web: WebView? = null
+    private var web: NoImeWebView? = null
     private var overlay: TouchOverlay? = null
     private var root: File? = null
     private var indexName = "index.html"
@@ -132,7 +132,7 @@ class WebGameActivity : ComponentActivity() {
                 .show()
             return
         }
-        val view = WebView(this)
+        val view = NoImeWebView(this)
         web = view
         // El proceso del WebView (donde corre Ruffle) mantiene prioridad alta mientras se juega.
         try { if (Build.VERSION.SDK_INT >= 26) view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false) } catch (e: Exception) { }
@@ -188,6 +188,33 @@ class WebGameActivity : ComponentActivity() {
 
     /** Flechas del juego Flash: se mandan como eventos de teclado desde JavaScript (las del WebView pueden perder el foco). */
     private fun jsArrows() = isSwf() && prefs.getBoolean("swf_js_arrows", true)
+
+    /** Tecla de Android -> (key, code, keyCode) de un evento de teclado web. */
+    private fun jsKeyInfo(k: Int): Triple<String, String, Int>? {
+        if (k in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z) {
+            val c = 'a' + (k - KeyEvent.KEYCODE_A)
+            return Triple(c.toString(), "Key" + c.uppercaseChar(), 65 + (k - KeyEvent.KEYCODE_A))
+        }
+        if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
+            val d = '0' + (k - KeyEvent.KEYCODE_0)
+            return Triple(d.toString(), "Digit$d", 48 + (k - KeyEvent.KEYCODE_0))
+        }
+        return when (k) {
+            KeyEvent.KEYCODE_DPAD_UP -> Triple("ArrowUp", "ArrowUp", 38)
+            KeyEvent.KEYCODE_DPAD_DOWN -> Triple("ArrowDown", "ArrowDown", 40)
+            KeyEvent.KEYCODE_DPAD_LEFT -> Triple("ArrowLeft", "ArrowLeft", 37)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> Triple("ArrowRight", "ArrowRight", 39)
+            KeyEvent.KEYCODE_SPACE -> Triple(" ", "Space", 32)
+            KeyEvent.KEYCODE_ENTER -> Triple("Enter", "Enter", 13)
+            KeyEvent.KEYCODE_ESCAPE -> Triple("Escape", "Escape", 27)
+            KeyEvent.KEYCODE_TAB -> Triple("Tab", "Tab", 9)
+            KeyEvent.KEYCODE_SHIFT_LEFT -> Triple("Shift", "ShiftLeft", 16)
+            KeyEvent.KEYCODE_CTRL_LEFT -> Triple("Control", "ControlLeft", 17)
+            KeyEvent.KEYCODE_COMMA -> Triple(",", "Comma", 188)
+            KeyEvent.KEYCODE_PERIOD -> Triple(".", "Period", 190)
+            else -> null
+        }
+    }
 
     private fun swfFps() = prefs.getBoolean("swf_fps", false)
 
@@ -270,15 +297,10 @@ class WebGameActivity : ComponentActivity() {
             return
         }
         if (action == KeyEvent.ACTION_DOWN) downKeys.add(key) else downKeys.remove(key)
-        val arrow = when (key) {
-            KeyEvent.KEYCODE_DPAD_UP -> "ArrowUp"
-            KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown"
-            KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft"
-            KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight"
-            else -> null
-        }
-        if (arrow != null && jsArrows()) {
-            web?.evaluateJavascript("window.__rk&&window.__rk('$arrow'," + (if (action == KeyEvent.ACTION_DOWN) "1" else "0") + ")", null)
+        val info = if (jsArrows()) jsKeyInfo(key) else null
+        if (info != null) {
+            val down = if (action == KeyEvent.ACTION_DOWN) 1 else 0
+            web?.evaluateJavascript("window.__rk&&window.__rk('${info.first}','${info.second}',${info.third},$down)", null)
             return
         }
         val t = SystemClock.uptimeMillis()
@@ -333,10 +355,9 @@ window.addEventListener("DOMContentLoaded", function () {
   player.tabIndex = 0;
   document.getElementById("p").appendChild(player);
   player.ruffle().load("/${Uri.encode(indexName)}");
-  // Flechas desde los botones de la pantalla: eventos de teclado directos al reproductor.
-  var CODES = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40 };
-  window.__rk = function (code, down) {
-    var init = { key: code, code: code, keyCode: CODES[code], which: CODES[code], bubbles: true, cancelable: true };
+  // Teclas desde los botones de la pantalla: eventos de teclado directos al reproductor.
+  window.__rk = function (key, code, kc, down) {
+    var init = { key: key, code: code, keyCode: kc, which: kc, bubbles: true, cancelable: true };
     var type = down ? "keydown" : "keyup";
     player.dispatchEvent(new KeyboardEvent(type, init));
     var c = player.shadowRoot && player.shadowRoot.querySelector("canvas");
@@ -480,7 +501,7 @@ window.addEventListener("DOMContentLoaded", function () {
                 prefs.edit().putString("swf_renderer", next).apply()
                 web?.reload()
             })
-            items.add("Flechas: " + (if (jsArrows()) "por JavaScript" else "nativas") to {
+            items.add("Teclas: " + (if (jsArrows()) "por JavaScript" else "nativas") to {
                 prefs.edit().putBoolean("swf_js_arrows", !jsArrows()).apply()
                 releaseKeys()
             })
@@ -489,6 +510,13 @@ window.addEventListener("DOMContentLoaded", function () {
                 web?.reload()
             })
         }
+        items.add("Teclado del celular: " + (if (web?.allowIme == true) "si" else "no") to {
+            web?.let { w ->
+                w.allowIme = !w.allowIme
+                if (!w.allowIme) (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(w.windowToken, 0)
+                Unit
+            }
+        })
         items.add("Recargar el juego" to { web?.reload() })
         if (canMove) items.add("Mover el juego dentro de la app (borrar el original)" to { confirmMove() })
         items.add("Salir" to { finishAffinity() })
@@ -602,4 +630,14 @@ private class LimitedInput(input: InputStream, private var left: Long) : FilterI
         if (n > 0) left -= n
         return n
     }
+}
+
+/** WebView que no abre el teclado del celular al tocarlo (estorba en los juegos); se puede activar desde el menu. */
+private class NoImeWebView(context: android.content.Context) : WebView(context) {
+    var allowIme = false
+
+    override fun onCheckIsTextEditor() = allowIme
+
+    override fun onCreateInputConnection(outAttrs: android.view.inputmethod.EditorInfo): android.view.inputmethod.InputConnection? =
+        if (allowIme) super.onCreateInputConnection(outAttrs) else null
 }
