@@ -108,6 +108,20 @@ class TouchOverlay(
                 startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
                 keyboard = true,
             )
+            // Juegos Flash en general (Hobo, etc.): flechas + A, S, D, W en los botones y Z, X, C, ESPACIO arriba.
+            "webflash" -> Layout(
+                listOf(
+                    Face("W", KeyEvent.KEYCODE_W, 0f, -0.6f), Face("D", KeyEvent.KEYCODE_D, 0.6f, 0f),
+                    Face("S", KeyEvent.KEYCODE_S, 0f, 0.6f), Face("A", KeyEvent.KEYCODE_A, -0.6f, 0f),
+                ),
+                listOf(
+                    "Z" to KeyEvent.KEYCODE_Z, "X" to KeyEvent.KEYCODE_X,
+                    "C" to KeyEvent.KEYCODE_C, "SPC" to KeyEvent.KEYCODE_SPACE,
+                ),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
+                keyboard = true,
+            )
             "webvn" -> Layout(
                 listOf(Face("ENTER", KeyEvent.KEYCODE_ENTER, 0f, 0f)),
                 listOf(

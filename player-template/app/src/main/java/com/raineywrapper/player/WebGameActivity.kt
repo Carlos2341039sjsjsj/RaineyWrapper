@@ -203,7 +203,7 @@ class WebGameActivity : ComponentActivity() {
     private fun pickMode(): String {
         val saved = prefs.getString(modeKey(), null)
         if (saved != null && saved in MODES) return saved
-        if (isSwf()) return if (indexName.contains("superfighter", ignoreCase = true)) "webfight" else "webplat"
+        if (isSwf()) return if (indexName.contains("superfighter", ignoreCase = true)) "webfight" else "webflash"
         val dir = root ?: return "webplat"
         if (File(dir, "js/rpg_core.js").isFile || File(dir, "js/rmmz_core.js").isFile || File(dir, "js/rpg_managers.js").isFile) return "rpgmv"
         if (isUnityWebGl()) return "webplat2"
@@ -227,6 +227,7 @@ class WebGameActivity : ComponentActivity() {
         "webplat2" -> "Accion (ESPACIO/J/H/L)"
         "webvn" -> "Novela visual"
         "webfight" -> "Combate (N/M/coma/punto)"
+        "webflash" -> "Flash clasico (A/S/D/W + Z/X/C/SPC)"
         else -> "Ninguno (solo tactil)"
     }
 
@@ -576,7 +577,7 @@ window.addEventListener("DOMContentLoaded", function () {
     private companion object {
         const val HOST = "rainey.game"
         const val KEY_MOVED = "moved_root"
-        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webvn", "none")
+        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webflash", "webvn", "none")
         val MIME = mapOf(
             "js" to "text/javascript", "mjs" to "text/javascript", "json" to "application/json", "wasm" to "application/wasm",
             "ogg" to "audio/ogg", "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav",
