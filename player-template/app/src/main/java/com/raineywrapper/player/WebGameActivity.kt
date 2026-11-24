@@ -345,7 +345,8 @@ window.addEventListener("DOMContentLoaded", function () {
   setInterval(function () { if (document.activeElement !== player) { try { player.focus(); } catch (e) { } } }, 250);
 });
 </script>$fpsJs</body></html>"""
-        return WebResourceResponse("text/html", "utf-8", 200, "OK", webHeaders(), ByteArrayInputStream(html.toByteArray()))
+        val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
+        return WebResourceResponse("text/html", "utf-8", 200, "OK", headers, ByteArrayInputStream(html.toByteArray()))
     }
 
     /** Archivos de Ruffle guardados en los assets del APK. */
