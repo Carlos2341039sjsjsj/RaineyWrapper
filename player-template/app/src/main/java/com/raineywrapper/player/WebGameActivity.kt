@@ -269,6 +269,9 @@ class WebGameActivity : ComponentActivity() {
     /** El contador de FPS se muestra siempre en los juegos Flash. */
     private fun swfFps() = true
 
+    /** Sonido apagado: sirve para probar si el audio le quita velocidad a un juego pesado. */
+    private fun swfMuted() = prefs.getBoolean("swf_mute", false)
+
     /**
      * Modo ligero: calidad baja siempre, menos tareas en segundo plano en la pagina. Por defecto se activa solo en equipos
      * con poca memoria (4 GB o menos); se puede cambiar desde el menu.
@@ -437,8 +440,11 @@ window.addEventListener("DOMContentLoaded", function () {
   function ready() {
     if (notified < 3 && window.RaineyNative) { notified++; window.RaineyNative.ready(); }
   }
+  var MUTE = ${if (swfMuted()) "true" else "false"};
+  if (MUTE) { try { player.volume = 0; } catch (e) { } }
   player.addEventListener("loadedmetadata", function () {
     try { window.__swfFps = Math.round(player.metadata.frameRate); } catch (e) { }
+    if (MUTE) { try { player.volume = 0; } catch (e) { } }
     ready();
   });
   var res = player.ruffle().load("/${Uri.encode(indexName)}");
@@ -593,6 +599,10 @@ window.addEventListener("DOMContentLoaded", function () {
             items.add("Teclas: " + (if (jsArrows()) "por JavaScript" else "nativas") to {
                 prefs.edit().putBoolean("swf_js_arrows", !jsArrows()).apply()
                 releaseKeys()
+            })
+            items.add("Sonido de Flash: " + (if (swfMuted()) "apagado" else "si") to {
+                prefs.edit().putBoolean("swf_mute", !swfMuted()).apply()
+                web?.reload()
             })
             items.add("Modo ligero: " + (if (swfLite()) "si" else "no") to {
                 prefs.edit().putBoolean("swf_lite", !swfLite()).apply()
