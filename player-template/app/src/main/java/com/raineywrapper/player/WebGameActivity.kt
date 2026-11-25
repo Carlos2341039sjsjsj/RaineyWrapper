@@ -107,7 +107,7 @@ class WebGameActivity : ComponentActivity() {
      */
     private fun focusGame() {
         val v = web ?: return
-        v.requestFocus()
+        v.requestFocusFromTouch()
         if (!isSwf()) return
         for (delay in longArrayOf(400, 1500, 3500, 7000)) {
             v.postDelayed({
@@ -397,7 +397,7 @@ class WebGameActivity : ComponentActivity() {
   window.addEventListener('keyup', function (e) { delete down[e.code]; }, true);
   function f(now) { n++; if (now - t >= 1000) { fps = Math.round(n * 1000 / (now - t)); n = 0; t = now; } requestAnimationFrame(f); }
   requestAnimationFrame(f);
-  setInterval(function () { d.textContent = fps + ' FPS' + (window.__swfFps ? ' (juego ' + window.__swfFps + ')' : '') + ' | rk=' + (window.__rkN || 0) + (window.__rkPl ? ' pl=' + window.__rkPl : ' sin-player') + (window.__err ? ' ERR ' + window.__err : '') + ' | ' + Object.keys(down).join(' '); }, ${if (lite) 500 else 100});
+  setInterval(function () { d.textContent = fps + ' FPS' + (window.__swfFps ? ' (juego ' + window.__swfFps + ')' : '') + ' | foco=' + (document.hasFocus() ? 'si' : 'NO') + ' ' + (document.activeElement ? document.activeElement.tagName : '-') + ' | rk=' + (window.__rkN || 0) + (window.__rkPl ? ' pl=' + window.__rkPl : ' sin-player') + (window.__err ? ' ERR ' + window.__err : '') + ' | ' + Object.keys(down).join(' '); }, ${if (lite) 500 else 100});
 })();
 </script>""" else ""
         val html = """<!doctype html>
@@ -407,7 +407,7 @@ class WebGameActivity : ComponentActivity() {
 <script>
 window.addEventListener("error", function (e) { window.__err = String(e.message || e).slice(0, 60); });
 window.RufflePlayer = window.RufflePlayer || {};
-window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, quality: "${swfQuality()}"$renderer };
+window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, contextMenu: "off", quality: "${swfQuality()}"$renderer };
 </script>
 <script src="/__ruffle/ruffle.js"></script>
 </head><body><div id="p"></div>
