@@ -49,7 +49,8 @@ class WebGameActivity : ComponentActivity() {
     private var indexName = "index.html"
     private var dialog: AlertDialog? = null
     private var mode = "rpgmv"
-    private var fit = false
+    /** Tamano del juego en pantalla: "big" (toda la pantalla), "normal" (entre los controles) o "small" (con margen arriba y abajo). */
+    private var screenMode = "big"
     private val prefs get() = getSharedPreferences("web_game", MODE_PRIVATE)
 
     private fun isMoved() = prefs.getString(KEY_MOVED, null)?.let { File(it, indexName).isFile } == true
@@ -68,7 +69,8 @@ class WebGameActivity : ComponentActivity() {
         val moved = prefs.getString(KEY_MOVED, null)?.let { File(it) }?.takeIf { File(it, indexName).isFile }
         root = moved ?: index.parentFile
         mode = pickMode()
-        fit = prefs.getBoolean(fitKey(), false)
+        screenMode = prefs.getString(screenKey(), null)?.takeIf { it == "big" || it == "normal" || it == "small" }
+            ?: (if (prefs.contains(fitKey())) (if (prefs.getBoolean(fitKey(), false)) "normal" else "big") else if (isSwf()) "normal" else "big")
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = showMenu()
         })
@@ -212,14 +214,27 @@ class WebGameActivity : ComponentActivity() {
     // ---------------------------------------------------------------- controles en pantalla
 
     private fun fitKey() = "fit_" + config.rom.hashCode()
+    private fun screenKey() = "screen_" + config.rom.hashCode()
+
+    /** La cruz de la pantalla manda flechas o W/A/S/D (cada juego Flash usa una u otra); se recuerda por juego. */
+    private fun wasdKey() = "wasd_" + config.rom.hashCode()
+    private fun dpadWasd() = isSwf() && prefs.getBoolean(wasdKey(), false)
+
+    private fun screenLabel() = when (screenMode) {
+        "normal" -> "Normal (entre los controles)"
+        "small" -> "Chica (deja ver la vida arriba)"
+        else -> "Grande (toda la pantalla)"
+    }
 
     /** Con "entre controles" el juego ocupa el centro y los botones quedan a los costados, sin tapar su pantalla. */
     private fun webParams(): FrameLayout.LayoutParams {
         val lp = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         val dm = resources.displayMetrics
-        if (fit && dm.widthPixels > dm.heightPixels) {
-            val m = (dm.widthPixels * 0.19f).toInt()
-            lp.setMargins(m, 0, m, 0)
+        if (screenMode != "big" && dm.widthPixels > dm.heightPixels) {
+            val side = (dm.widthPixels * 0.19f).toInt()
+            // Chica: ademas deja una franja arriba y abajo, para que la barra de vida no quede bajo el boton del menu.
+            val vert = if (screenMode == "small") (dm.heightPixels * 0.14f).toInt() else 0
+            lp.setMargins(side, vert, side, vert)
         }
         return lp
     }
@@ -248,6 +263,14 @@ class WebGameActivity : ComponentActivity() {
         if (k in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9) {
             val d = '0' + (k - KeyEvent.KEYCODE_0)
             return Triple(d.toString(), "Digit$d", 48 + (k - KeyEvent.KEYCODE_0))
+        }
+        if (dpadWasd()) {
+            when (k) {
+                KeyEvent.KEYCODE_DPAD_UP -> return Triple("w", "KeyW", 87)
+                KeyEvent.KEYCODE_DPAD_DOWN -> return Triple("s", "KeyS", 83)
+                KeyEvent.KEYCODE_DPAD_LEFT -> return Triple("a", "KeyA", 65)
+                KeyEvent.KEYCODE_DPAD_RIGHT -> return Triple("d", "KeyD", 68)
+            }
         }
         return when (k) {
             KeyEvent.KEYCODE_DPAD_UP -> Triple("ArrowUp", "ArrowUp", 38)
@@ -320,7 +343,7 @@ class WebGameActivity : ComponentActivity() {
         "webplat2" -> "Accion (ESPACIO/J/H/L)"
         "webvn" -> "Novela visual"
         "webfight" -> "Combate (N/M/coma/punto)"
-        "webflash" -> "Flash clasico (A/S/D/W + Z/X/C/SPC)"
+        "webflash" -> "Flash clasico (Z/X/C/SPC + A/S/D/SHIFT)"
         else -> "Ninguno (solo tactil)"
     }
 
@@ -393,14 +416,14 @@ class WebGameActivity : ComponentActivity() {
 <script>
 (function () {
   var d = document.createElement('div');
-  d.style.cssText = 'position:fixed;left:50%;top:2px;transform:translateX(-50%);font:12px monospace;color:#0f0;background:rgba(0,0,0,.6);padding:1px 6px;z-index:99;pointer-events:none';
+  d.style.cssText = 'position:fixed;left:4px;top:2px;font:12px monospace;color:#0f0;background:rgba(0,0,0,.6);padding:1px 6px;z-index:99;pointer-events:none';
   document.body.appendChild(d);
   var n = 0, t = performance.now(), fps = 0, down = {};
   window.addEventListener('keydown', function (e) { down[e.code] = 1; }, true);
   window.addEventListener('keyup', function (e) { delete down[e.code]; }, true);
   function f(now) { n++; if (now - t >= 1000) { fps = Math.round(n * 1000 / (now - t)); n = 0; t = now; } requestAnimationFrame(f); }
   requestAnimationFrame(f);
-  setInterval(function () { d.textContent = fps + ' FPS' + (window.__swfFps ? ' (juego ' + window.__swfFps + ')' : '') + ' | foco=' + (document.hasFocus() ? 'si' : 'NO') + ' ' + (document.activeElement ? document.activeElement.tagName : '-') + ' | rk=' + (window.__rkN || 0) + (window.__rkPl ? ' pl=' + window.__rkPl : ' sin-player') + (window.__err ? ' ERR ' + window.__err : '') + ' | ' + Object.keys(down).join(' '); }, ${if (lite) 500 else 100});
+  setInterval(function () { d.textContent = fps + ' FPS' + (window.__swfFps ? ' (juego ' + window.__swfFps + ')' : '') + (window.__err ? ' ERR ' + window.__err : ''); }, ${if (lite) 500 else 100});
 })();
 </script>""" else ""
         val html = """<!doctype html>
@@ -580,9 +603,9 @@ window.addEventListener("DOMContentLoaded", function () {
             prefs.edit().putString(modeKey(), mode).apply()
             setupOverlay(hidden)
         })
-        items.add("Pantalla: " + (if (fit) "entre los controles" else "completa") to {
-            fit = !fit
-            prefs.edit().putBoolean(fitKey(), fit).apply()
+        items.add("Pantalla: " + screenLabel() to {
+            screenMode = when (screenMode) { "big" -> "normal"; "normal" -> "small"; else -> "big" }
+            prefs.edit().putString(screenKey(), screenMode).apply()
             web?.layoutParams = webParams()
         })
         if (isSwf()) {
@@ -595,6 +618,10 @@ window.addEventListener("DOMContentLoaded", function () {
                 val next = when (swfRenderer()) { "auto" -> "canvas"; "canvas" -> "webgl"; else -> "auto" }
                 prefs.edit().putString("swf_renderer", next).apply()
                 web?.reload()
+            })
+            items.add("Cruz de movimiento: " + (if (dpadWasd()) "W A S D" else "flechas") to {
+                releaseKeys()
+                prefs.edit().putBoolean(wasdKey(), !dpadWasd()).apply()
             })
             items.add("Teclas: " + (if (jsArrows()) "por JavaScript" else "nativas") to {
                 prefs.edit().putBoolean("swf_js_arrows", !jsArrows()).apply()
