@@ -200,6 +200,7 @@ class WebGameActivity : ComponentActivity() {
 
         // Los juegos de Unity WebGL traen sus controles: los de teclado empiezan ocultos.
         setupOverlay(hidden = isUnityWebGl())
+        askControlsIfNeeded()
         view.loadUrl("https://$HOST/" + (if (isSwf()) "__swf.html" else Uri.encode(indexName)))
         view.requestFocus()
         val imeHider = object : Runnable {
@@ -221,7 +222,7 @@ class WebGameActivity : ComponentActivity() {
 
     /** La cruz de la pantalla manda flechas o W/A/S/D (cada juego Flash usa una u otra); se recuerda por juego. */
     private fun wasdKey() = "wasd_" + config.rom.hashCode()
-    private fun dpadWasd() = isSwf() && prefs.getBoolean(wasdKey(), false)
+    private fun dpadWasd() = isSwf() && prefs.getBoolean(wasdKey(), swfProfile()?.second ?: false)
 
     private fun screenLabel() = when (screenMode) {
         "normal" -> "Normal (entre los controles)"
@@ -318,15 +319,61 @@ class WebGameActivity : ComponentActivity() {
 
     private fun modeKey() = "mode_" + config.rom.hashCode()
 
+    /**
+     * Perfiles de juegos Flash conocidos: (palabras que deben estar TODAS en el nombre del archivo, controles, cruz con WASD).
+     * Para sumar un juego basta con agregar una linea. Solo van juegos cuyas teclas estan confirmadas.
+     */
+    private class SwfProfile(val all: List<String>, val none: List<String>, val mode: String, val wasd: Boolean)
+
+    private val swfProfiles = listOf(
+        SwfProfile(listOf("superfighter"), emptyList(), "webfight", false),
+        SwfProfile(listOf("happy", "wheel"), emptyList(), "webcar", false),
+        // Chaos Faction 1 y 2: flechas (saltar / escudo), Z y X atacan, SHIFT cuerpo a cuerpo, D suelta el arma, ESPACIO pausa.
+        SwfProfile(listOf("chaos", "faction"), emptyList(), "webcf", false),
+        // Hobo (el primero): flechas para moverse, A golpea / recoge, S patea. Las secuelas no estan confirmadas, por eso se excluyen.
+        SwfProfile(listOf("hobo"), listOf("2", "3", "4", "5", "prison", "wasteland", "wanted", "total", "last", "dojo"), "webab", false),
+    )
+
+    private fun swfProfile(): Pair<String, Boolean>? {
+        if (!isSwf()) return null
+        val name = indexName.lowercase().removeSuffix(".swf")
+        return swfProfiles.firstOrNull { p -> p.all.all { name.contains(it) } && p.none.none { name.contains(it) } }?.let { it.mode to it.wasd }
+    }
+
+    private fun askedKey() = "asked_" + config.rom.hashCode()
+
+    /** Primera vez con un juego Flash que no esta en la tabla: se pregunta como se juega y se recuerda. */
+    private fun askControlsIfNeeded() {
+        if (!isSwf() || swfProfile() != null) return
+        if (prefs.contains(modeKey()) || prefs.getBoolean(askedKey(), false)) return
+        data class Opt(val label: String, val mode: String, val wasd: Boolean)
+        val opts = listOf(
+            Opt("Flechas + A / S / Z / X (la mayoria)", "webflash", false),
+            Opt("Flechas + solo A y S (2 botones)", "webab", false),
+            Opt("Peleas: Z / X / SHIFT / D (Chaos Faction)", "webcf", false),
+            Opt("Movimiento con W A S D", "webflash", true),
+            Opt("Flechas + espacio, shift, ctrl (vehiculos)", "webcar", false),
+            Opt("Combate con N / M / coma / punto", "webfight", false),
+            Opt("Plataformas (flechas + saltar)", "webplat", false),
+        )
+        dialog = AlertDialog.Builder(this)
+            .setTitle("Como se juega " + config.title + "?")
+            .setItems(opts.map { it.label }.toTypedArray()) { _, which ->
+                val o = opts[which]
+                mode = o.mode
+                prefs.edit().putString(modeKey(), o.mode).putBoolean(wasdKey(), o.wasd).putBoolean(askedKey(), true).apply()
+                setupOverlay(false)
+            }
+            .setNegativeButton("Elegir despues") { _, _ -> prefs.edit().putBoolean(askedKey(), true).apply() }
+            .setOnDismissListener { focusGame() }
+            .show()
+    }
+
     /** Controles guardados para este juego; si no hay, se adivinan por los archivos de la carpeta. */
     private fun pickMode(): String {
         val saved = prefs.getString(modeKey(), null)
         if (saved != null && saved in MODES) return saved
-        if (isSwf()) return when {
-            indexName.contains("superfighter", ignoreCase = true) -> "webfight"
-            indexName.contains("happy", ignoreCase = true) && indexName.contains("wheel", ignoreCase = true) -> "webcar"
-            else -> "webflash"
-        }
+        if (isSwf()) return swfProfile()?.first ?: "webflash"
         val dir = root ?: return "webplat"
         if (File(dir, "js/rpg_core.js").isFile || File(dir, "js/rmmz_core.js").isFile || File(dir, "js/rpg_managers.js").isFile) return "rpgmv"
         if (isUnityWebGl()) return "webplat2"
@@ -352,6 +399,8 @@ class WebGameActivity : ComponentActivity() {
         "webfight" -> "Combate (N/M/coma/punto)"
         "webflash" -> "Flash clasico (Z/X/C/SPC + A/S/D/SHIFT)"
         "webcar" -> "Vehiculos / Happy Wheels (SPC/SHIFT/CTRL/Z)"
+        "webab" -> "Dos botones (A / S)"
+        "webcf" -> "Peleas de plataforma (Z/X/SHIFT/D)"
         else -> "Ninguno (solo tactil)"
     }
 
@@ -795,7 +844,7 @@ window.addEventListener("DOMContentLoaded", function () {
     private companion object {
         const val HOST = "rainey.game"
         const val KEY_MOVED = "moved_root"
-        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webflash", "webcar", "webvn", "none")
+        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webflash", "webcar", "webab", "webcf", "webvn", "none")
         val MIME = mapOf(
             "js" to "text/javascript", "mjs" to "text/javascript", "json" to "application/json", "wasm" to "application/wasm",
             "ogg" to "audio/ogg", "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav",

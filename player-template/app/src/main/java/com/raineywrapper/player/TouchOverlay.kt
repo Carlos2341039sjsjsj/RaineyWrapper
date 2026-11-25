@@ -136,6 +136,25 @@ class TouchOverlay(
                 startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
                 keyboard = true,
             )
+            // Juegos Flash de dos botones (Hobo: A golpea / recoge, S patea): solo A y S, grandes; la cruz mueve con las flechas.
+            "webab" -> Layout(
+                listOf(Face("A", KeyEvent.KEYCODE_A, -0.45f, 0.25f), Face("S", KeyEvent.KEYCODE_S, 0.45f, -0.25f)),
+                emptyList(),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
+                keyboard = true,
+            )
+            // Peleas de plataforma (Chaos Faction): Z y X atacan, SHIFT cuerpo a cuerpo, D suelta el arma, ESPACIO pausa.
+            "webcf" -> Layout(
+                listOf(
+                    Face("X", KeyEvent.KEYCODE_X, 0f, -0.6f), Face("Z", KeyEvent.KEYCODE_Z, 0.6f, 0f),
+                    Face("D", KeyEvent.KEYCODE_D, 0f, 0.6f), Face("SHIFT", KeyEvent.KEYCODE_SHIFT_LEFT, -0.6f, 0f),
+                ),
+                emptyList(),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "PAUSA", startKey = KeyEvent.KEYCODE_SPACE,
+                keyboard = true,
+            )
             "webvn" -> Layout(
                 listOf(Face("ENTER", KeyEvent.KEYCODE_ENTER, 0f, 0f)),
                 listOf(
