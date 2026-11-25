@@ -305,7 +305,7 @@ sealed class GameSource(val file: File, val system: GameSystem) {
         fun resolve(context: Context, file: File, systemOverride: GameSystem? = null): GameSource {
             if (!file.canRead()) throw UserError("Can't read ${file.name}.")
             val ext = file.ext
-            if (ext == "exe" || ext == "msi" || ext == "bat") {
+            if (ext == "msi" || ext == "bat") {
                 throw UserError(
                     "${file.name} es un programa de Windows (.$ext) y no se puede abrir en el celular.\n\n" +
                         "Solo se leen juegos web HTML5 (index.html: RPG Maker MV/MZ, novelas visuales, plataformas) y de RPG Maker 2000/2003 (RPG_RT.ldb). " +
