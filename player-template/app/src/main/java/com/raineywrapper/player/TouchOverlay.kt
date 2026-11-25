@@ -122,6 +122,20 @@ class TouchOverlay(
                 startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
                 keyboard = true,
             )
+            // Vehiculos / Happy Wheels: cruz = flechas; ESPACIO, SHIFT, CTRL y Z grandes; C y X arriba.
+            "webcar" -> Layout(
+                listOf(
+                    Face("SPC", KeyEvent.KEYCODE_SPACE, 0f, -0.6f), Face("SHIFT", KeyEvent.KEYCODE_SHIFT_LEFT, 0.6f, 0f),
+                    Face("CTRL", KeyEvent.KEYCODE_CTRL_LEFT, 0f, 0.6f), Face("Z", KeyEvent.KEYCODE_Z, -0.6f, 0f),
+                ),
+                listOf(
+                    "C" to KeyEvent.KEYCODE_C, "X" to KeyEvent.KEYCODE_X,
+                    "A" to KeyEvent.KEYCODE_A, "S" to KeyEvent.KEYCODE_S,
+                ),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
+                keyboard = true,
+            )
             "webvn" -> Layout(
                 listOf(Face("ENTER", KeyEvent.KEYCODE_ENTER, 0f, 0f)),
                 listOf(

@@ -69,8 +69,11 @@ class WebGameActivity : ComponentActivity() {
         val moved = prefs.getString(KEY_MOVED, null)?.let { File(it) }?.takeIf { File(it, indexName).isFile }
         root = moved ?: index.parentFile
         mode = pickMode()
-        screenMode = prefs.getString(screenKey(), null)?.takeIf { it == "big" || it == "normal" || it == "small" }
-            ?: (if (prefs.contains(fitKey())) (if (prefs.getBoolean(fitKey(), false)) "normal" else "big") else if (isSwf()) "normal" else "big")
+        // Juegos Flash: la pantalla queda siempre entre los controles (no se cambia). El resto de los juegos web la recuerdan.
+        screenMode = if (isSwf()) "normal" else (
+            prefs.getString(screenKey(), null)?.takeIf { it == "big" || it == "normal" || it == "small" }
+                ?: (if (prefs.contains(fitKey()) && prefs.getBoolean(fitKey(), false)) "normal" else "big")
+            )
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = showMenu()
         })
@@ -243,7 +246,7 @@ class WebGameActivity : ComponentActivity() {
     private fun swfQuality() = if (swfLite()) "low" else prefs.getString("swf_quality", "low").let { if (it == "medium" || it == "high") it else "low" }
 
     /** Motor con el que Ruffle dibuja: automatico, canvas 2D o WebGL (para probar cual anda mejor en cada equipo). */
-    private fun swfRenderer() = prefs.getString("swf_renderer", "auto").let { if (it == "canvas" || it == "webgl") it else "auto" }
+    private fun swfRenderer() = "auto" // Canvas y WebGL daban fallos con los botones de mover: se dejo solo el automatico.
 
     private fun rendererLabel() = when (swfRenderer()) {
         "canvas" -> "Canvas"
@@ -319,7 +322,11 @@ class WebGameActivity : ComponentActivity() {
     private fun pickMode(): String {
         val saved = prefs.getString(modeKey(), null)
         if (saved != null && saved in MODES) return saved
-        if (isSwf()) return if (indexName.contains("superfighter", ignoreCase = true)) "webfight" else "webflash"
+        if (isSwf()) return when {
+            indexName.contains("superfighter", ignoreCase = true) -> "webfight"
+            indexName.contains("happy", ignoreCase = true) && indexName.contains("wheel", ignoreCase = true) -> "webcar"
+            else -> "webflash"
+        }
         val dir = root ?: return "webplat"
         if (File(dir, "js/rpg_core.js").isFile || File(dir, "js/rmmz_core.js").isFile || File(dir, "js/rpg_managers.js").isFile) return "rpgmv"
         if (isUnityWebGl()) return "webplat2"
@@ -344,6 +351,7 @@ class WebGameActivity : ComponentActivity() {
         "webvn" -> "Novela visual"
         "webfight" -> "Combate (N/M/coma/punto)"
         "webflash" -> "Flash clasico (Z/X/C/SPC + A/S/D/SHIFT)"
+        "webcar" -> "Vehiculos / Happy Wheels (SPC/SHIFT/CTRL/Z)"
         else -> "Ninguno (solo tactil)"
     }
 
@@ -603,20 +611,17 @@ window.addEventListener("DOMContentLoaded", function () {
             prefs.edit().putString(modeKey(), mode).apply()
             setupOverlay(hidden)
         })
-        items.add("Pantalla: " + screenLabel() to {
-            screenMode = when (screenMode) { "big" -> "normal"; "normal" -> "small"; else -> "big" }
-            prefs.edit().putString(screenKey(), screenMode).apply()
-            web?.layoutParams = webParams()
-        })
+        if (!isSwf()) {
+            items.add("Pantalla: " + screenLabel() to {
+                screenMode = when (screenMode) { "big" -> "normal"; "normal" -> "small"; else -> "big" }
+                prefs.edit().putString(screenKey(), screenMode).apply()
+                web?.layoutParams = webParams()
+            })
+        }
         if (isSwf()) {
             items.add("Calidad de Flash: " + (if (swfLite()) "Baja (modo ligero)" else qualityLabel()) to {
                 val next = when (swfQuality()) { "low" -> "medium"; "medium" -> "high"; else -> "low" }
                 prefs.edit().putString("swf_quality", next).apply()
-                web?.reload()
-            })
-            items.add("Dibujo de Flash (probar): " + rendererLabel() to {
-                val next = when (swfRenderer()) { "auto" -> "canvas"; "canvas" -> "webgl"; else -> "auto" }
-                prefs.edit().putString("swf_renderer", next).apply()
                 web?.reload()
             })
             items.add("Cruz de movimiento: " + (if (dpadWasd()) "W A S D" else "flechas") to {
@@ -790,7 +795,7 @@ window.addEventListener("DOMContentLoaded", function () {
     private companion object {
         const val HOST = "rainey.game"
         const val KEY_MOVED = "moved_root"
-        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webflash", "webvn", "none")
+        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webflash", "webcar", "webvn", "none")
         val MIME = mapOf(
             "js" to "text/javascript", "mjs" to "text/javascript", "json" to "application/json", "wasm" to "application/wasm",
             "ogg" to "audio/ogg", "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav",
