@@ -225,7 +225,7 @@ class WebGameActivity : ComponentActivity() {
     }
 
     // Calidad de dibujo de Ruffle: baja (sin suavizado de bordes) arranca como predeterminada, es lo mas liviano.
-    private fun swfQuality() = prefs.getString("swf_quality", "low").let { if (it == "medium" || it == "high") it else "low" }
+    private fun swfQuality() = if (swfLite()) "low" else prefs.getString("swf_quality", "low").let { if (it == "medium" || it == "high") it else "low" }
 
     /** Motor con el que Ruffle dibuja: automatico, canvas 2D o WebGL (para probar cual anda mejor en cada equipo). */
     private fun swfRenderer() = prefs.getString("swf_renderer", "auto").let { if (it == "canvas" || it == "webgl") it else "auto" }
@@ -266,7 +266,20 @@ class WebGameActivity : ComponentActivity() {
         }
     }
 
-    private fun swfFps() = prefs.getBoolean("swf_fps", false)
+    /** El contador de FPS se muestra siempre en los juegos Flash. */
+    private fun swfFps() = true
+
+    /**
+     * Modo ligero: calidad baja siempre, menos tareas en segundo plano en la pagina. Por defecto se activa solo en equipos
+     * con poca memoria (4 GB o menos); se puede cambiar desde el menu.
+     */
+    private fun swfLite(): Boolean {
+        val saved = if (prefs.contains("swf_lite")) prefs.getBoolean("swf_lite", true) else null
+        if (saved != null) return saved
+        val info = android.app.ActivityManager.MemoryInfo()
+        (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).getMemoryInfo(info)
+        return info.totalMem <= (4500L shl 20)
+    }
 
     private fun qualityLabel() = when (swfQuality()) {
         "low" -> "Baja (mas rapido)"
@@ -370,6 +383,7 @@ class WebGameActivity : ComponentActivity() {
 
     /** Pagina que abre el .swf con Ruffle (reproductor de Flash que viaja dentro del APK, en assets/ruffle). */
     private fun swfPage(): WebResourceResponse {
+        val lite = swfLite()
         val renderer = if (swfRenderer() == "auto") "" else ", preferredRenderer: \"" + swfRenderer() + "\""
         // Contador de FPS (los de la pantalla) y teclas que la pagina ve apretadas: sirve para medir y para cazar teclas pegadas.
         val fpsJs = if (swfFps()) """
@@ -383,7 +397,7 @@ class WebGameActivity : ComponentActivity() {
   window.addEventListener('keyup', function (e) { delete down[e.code]; }, true);
   function f(now) { n++; if (now - t >= 1000) { fps = Math.round(n * 1000 / (now - t)); n = 0; t = now; } requestAnimationFrame(f); }
   requestAnimationFrame(f);
-  setInterval(function () { d.textContent = fps + ' FPS ' + Object.keys(down).join(' '); }, 100);
+  setInterval(function () { d.textContent = fps + ' FPS' + (window.__swfFps ? ' (juego ' + window.__swfFps + ')' : '') + ' | rk=' + (window.__rkN || 0) + (window.__rkPl ? ' pl=' + window.__rkPl : ' sin-player') + (window.__err ? ' ERR ' + window.__err : '') + ' | ' + Object.keys(down).join(' '); }, ${if (lite) 500 else 100});
 })();
 </script>""" else ""
         val html = """<!doctype html>
@@ -391,15 +405,30 @@ class WebGameActivity : ComponentActivity() {
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100vw;height:100vh}</style>
 <script>
+window.addEventListener("error", function (e) { window.__err = String(e.message || e).slice(0, 60); });
 window.RufflePlayer = window.RufflePlayer || {};
 window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, quality: "${swfQuality()}"$renderer };
 </script>
 <script src="/__ruffle/ruffle.js"></script>
 </head><body><div id="p"></div>
 <script>
+var player = null;
+// Teclas desde los botones de la pantalla: eventos de teclado directos al reproductor.
+window.__rkN = 0;
+window.__rk = function (key, code, kc, down) {
+  window.__rkN++;
+  if (!player) return;
+  var init = { key: key, code: code, keyCode: kc, which: kc, bubbles: true, cancelable: true };
+  var type = down ? "keydown" : "keyup";
+  player.dispatchEvent(new KeyboardEvent(type, init));
+  var c = player.shadowRoot && player.shadowRoot.querySelector("canvas");
+  if (c) c.dispatchEvent(new KeyboardEvent(type, init));
+};
+window.__pp = function (p) { try { if (p) player.pause(); else player.play(); } catch (e) { } };
 window.addEventListener("DOMContentLoaded", function () {
   var ruffle = window.RufflePlayer.newest();
-  var player = ruffle.createPlayer();
+  player = ruffle.createPlayer();
+  window.__rkPl = "ok";
   player.style.width = "100%";
   player.style.height = "100%";
   player.tabIndex = 0;
@@ -408,17 +437,12 @@ window.addEventListener("DOMContentLoaded", function () {
   function ready() {
     if (notified < 3 && window.RaineyNative) { notified++; window.RaineyNative.ready(); }
   }
-  player.addEventListener("loadedmetadata", ready);
+  player.addEventListener("loadedmetadata", function () {
+    try { window.__swfFps = Math.round(player.metadata.frameRate); } catch (e) { }
+    ready();
+  });
   var res = player.ruffle().load("/${Uri.encode(indexName)}");
   if (res && res.then) res.then(ready, function () { });
-  // Teclas desde los botones de la pantalla: eventos de teclado directos al reproductor.
-  window.__rk = function (key, code, kc, down) {
-    var init = { key: key, code: code, keyCode: kc, which: kc, bubbles: true, cancelable: true };
-    var type = down ? "keydown" : "keyup";
-    player.dispatchEvent(new KeyboardEvent(type, init));
-    var c = player.shadowRoot && player.shadowRoot.querySelector("canvas");
-    if (c) c.dispatchEvent(new KeyboardEvent(type, init));
-  };
   // Ruffle crea campos de texto ocultos cuando el juego tiene un cuadro de texto: se les quita el teclado del celular.
   setInterval(function () {
     var roots = [document, player.shadowRoot];
@@ -427,9 +451,9 @@ window.addEventListener("DOMContentLoaded", function () {
       var els = roots[i].querySelectorAll("input,textarea");
       for (var j = 0; j < els.length; j++) els[j].setAttribute("inputmode", "none");
     }
-  }, 300);
+  }, ${if (lite) 1000 else 300});
   // Si el foco se va del reproductor (navegacion con la cruz), se le devuelve: sin foco el juego deja de recibir teclas.
-  setInterval(function () { if (document.activeElement !== player) { try { player.focus(); } catch (e) { } } }, 250);
+  setInterval(function () { if (document.activeElement !== player) { try { player.focus(); } catch (e) { } } }, ${if (lite) 1000 else 250});
 });
 </script>$fpsJs</body></html>"""
         val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-cache")
@@ -538,7 +562,7 @@ window.addEventListener("DOMContentLoaded", function () {
         if (dialog?.isShowing == true) return
         releaseKeys()
         val controls = overlay?.visibility == View.VISIBLE
-        val canMove = !isMoved() && !isSwf()
+        val canMove = !isMoved()
         val items = mutableListOf<Pair<String, () -> Unit>>()
         items.add("Continuar" to { })
         items.add("Controles en pantalla: " + (if (controls) "si" else "no") to {
@@ -556,7 +580,7 @@ window.addEventListener("DOMContentLoaded", function () {
             web?.layoutParams = webParams()
         })
         if (isSwf()) {
-            items.add("Calidad de Flash: " + qualityLabel() to {
+            items.add("Calidad de Flash: " + (if (swfLite()) "Baja (modo ligero)" else qualityLabel()) to {
                 val next = when (swfQuality()) { "low" -> "medium"; "medium" -> "high"; else -> "low" }
                 prefs.edit().putString("swf_quality", next).apply()
                 web?.reload()
@@ -570,8 +594,8 @@ window.addEventListener("DOMContentLoaded", function () {
                 prefs.edit().putBoolean("swf_js_arrows", !jsArrows()).apply()
                 releaseKeys()
             })
-            items.add("Mostrar FPS: " + (if (swfFps()) "si" else "no") to {
-                prefs.edit().putBoolean("swf_fps", !swfFps()).apply()
+            items.add("Modo ligero: " + (if (swfLite()) "si" else "no") to {
+                prefs.edit().putBoolean("swf_lite", !swfLite()).apply()
                 web?.reload()
             })
         }
@@ -585,10 +609,14 @@ window.addEventListener("DOMContentLoaded", function () {
         items.add("Recargar el juego" to { web?.reload() })
         if (canMove) items.add("Mover el juego dentro de la app (borrar el original)" to { confirmMove() })
         items.add("Salir" to { finishAffinity() })
+        web?.evaluateJavascript("window.__pp&&window.__pp(1)", null)
         dialog = AlertDialog.Builder(this)
             .setTitle(config.title)
             .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
-            .setOnDismissListener { focusGame() }
+            .setOnDismissListener {
+                web?.evaluateJavascript("window.__pp&&window.__pp(0)", null)
+                focusGame()
+            }
             .show()
     }
 
@@ -605,6 +633,21 @@ window.addEventListener("DOMContentLoaded", function () {
 
     private fun confirmMove() {
         val src = root ?: return
+        if (isSwf()) {
+            // Un .swf suelto: se mueve solo ese archivo (la carpeta puede ser Descargas u otra con cosas de la persona).
+            val file = File(src, indexName)
+            if (!file.isFile) return
+            dialog = AlertDialog.Builder(this)
+                .setTitle("Mover el juego")
+                .setMessage(
+                    "Se copia el archivo del juego (${file.length() shr 20} MB) dentro de la app y despues se borra el original:\n${file.absolutePath}\n\n" +
+                        "Solo se toca ese archivo, no la carpeta. Si desinstalas la app, el juego se borra con ella.",
+                )
+                .setPositiveButton("Mover y borrar") { _, _ -> doMoveSwf(file) }
+                .setNegativeButton("Cancelar", null)
+                .show()
+            return
+        }
         if (!isSafeToMove(src)) {
             Toast.makeText(this, "Esta carpeta no se puede mover de forma segura.", Toast.LENGTH_LONG).show()
             return
@@ -620,6 +663,45 @@ window.addEventListener("DOMContentLoaded", function () {
             .setPositiveButton("Mover y borrar") { _, _ -> doMove(src) }
             .setNegativeButton("Cancelar", null)
             .show()
+    }
+
+    private fun doMoveSwf(file: File) {
+        if (StatFs(filesDir.absolutePath).availableBytes < file.length() + (50L shl 20)) {
+            Toast.makeText(this, "No hay espacio libre suficiente para copiar el juego.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val dest = File(filesDir, "webgame")
+        val progress = AlertDialog.Builder(this)
+            .setTitle("Moviendo el juego")
+            .setMessage("No cierres la app hasta que termine.")
+            .setCancelable(false)
+            .show()
+        Thread {
+            val result = try {
+                dest.deleteRecursively()
+                dest.mkdirs()
+                val copy = File(dest, file.name)
+                file.copyTo(copy, overwrite = true)
+                if (copy.length() != file.length()) {
+                    dest.deleteRecursively()
+                    "La copia no coincide con el original. No se borro nada."
+                } else {
+                    prefs.edit().putString(KEY_MOVED, dest.absolutePath).commit()
+                    if (file.delete()) "OK" else "OK: no se pudo borrar el original, revisalo a mano."
+                }
+            } catch (e: Exception) {
+                dest.deleteRecursively()
+                "Error al mover el juego: ${e.message}"
+            }
+            runOnUiThread {
+                progress.dismiss()
+                if (result.startsWith("OK")) {
+                    root = dest
+                    web?.reload()
+                }
+                Toast.makeText(this, if (result == "OK") "Listo: el juego esta dentro de la app." else result, Toast.LENGTH_LONG).show()
+            }
+        }.start()
     }
 
     private fun doMove(src: File) {
