@@ -78,6 +78,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_LITE_ASKED = "lite_asked"
         private const val PREF_DS_LAND = "ds_landscape"
         private const val PREF_DS_PERF = "ds_perf_high"
+        private const val PREF_DS_SOUND = "ds_sound_level"
     }
 
     private lateinit var container: FrameLayout
@@ -400,10 +401,7 @@ class GameActivity : ComponentActivity() {
             Variable("melonds_jit_fast_memory", "enabled"),
             Variable("melonds_jit_branch_optimisations", "enabled"),
             Variable("melonds_jit_literal_optimisations", "enabled"),
-            // Audio mas liviano: sin interpolacion y 10 bits (suena un poco mas seco, pero gasta menos CPU).
-            Variable("melonds_audio_interpolation", "None"),
-            Variable("melonds_audio_bitrate", "10-bit"),
-        ) else emptyArray<Variable>())
+        ) else emptyArray<Variable>()) + dsSoundVars()
         else -> emptyArray()
     }
 
@@ -552,6 +550,14 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putBoolean(PREF_DS_PERF, !prefs().getBoolean(PREF_DS_PERF, false)).commit()
             restartGame()
         }.takeIf { config.system == "nds" },
+        GameMenu.Item({ "Sonido DS: " + dsSoundLabel() }) {
+            prefs().edit().putInt(PREF_DS_SOUND, (dsSoundLevel() + 1) % 3).commit()
+            restartGame()
+        }.takeIf { config.system == "nds" },
+        GameMenu.Item({ "Modo estable (100% de velocidad)" }) {
+            setStable()
+            restartGame()
+        }.takeIf { config.system in listOf("nds", "3ds", "wii", "gamecube", "gc") },
         GameMenu.Item({ "Pantallas DS: " + (if (dsLandscape()) "horizontal" else "vertical") }) {
             prefs().edit().putBoolean(PREF_DS_LAND, !dsLandscape()).commit()
             restartGame()
@@ -781,6 +787,32 @@ class GameActivity : ComponentActivity() {
     }
 
     private fun dsLandscape() = prefs().getBoolean(PREF_DS_LAND, false)
+
+    /** Sonido DS: 0 Estable (None, 10-bit: lo mas liviano, suena seco), 1 Equilibrado (Cosine, 16-bit), 2 Calidad (Cubic, 16-bit). */
+    private fun dsSoundLevel() = prefs().getInt(PREF_DS_SOUND, 1).coerceIn(0, 2)
+
+    private fun dsSoundLabel() = listOf("Estable", "Equilibrado", "Calidad")[dsSoundLevel()]
+
+    private fun dsSoundVars(): Array<Variable> = when (dsSoundLevel()) {
+        0 -> arrayOf(Variable("melonds_audio_interpolation", "None"), Variable("melonds_audio_bitrate", "10-bit"))
+        2 -> arrayOf(Variable("melonds_audio_interpolation", "Cubic"), Variable("melonds_audio_bitrate", "16-bit"))
+        else -> arrayOf(Variable("melonds_audio_interpolation", "Cosine"), Variable("melonds_audio_bitrate", "16-bit"))
+    }
+
+    /**
+     * Modo estable para las consolas pesadas (DS, 3DS, Wii, GameCube): velocidad al 100% (sin bajar el reloj),
+     * resolucion 1x, rendimiento sostenido, audio con buffer grande y los presets de rendimiento ya probados.
+     */
+    private fun setStable() {
+        val e = prefs().edit().putBoolean(PREF_SUSTAINED, true).putInt(PREF_AUDIO_MODE, 2)
+        when (config.system) {
+            "nds" -> e.putBoolean(PREF_DS_PERF, true).putInt(PREF_DS_SOUND, 1)
+            "3ds" -> e.putBoolean(PREF_3DS_PERF, true).putInt(PREF_3DS_RES, 0).putInt(PREF_3DS_CLOCK, 0)
+            else -> e.putInt(PREF_DOLPHIN_OPT, 0).putInt(PREF_RESOLUTION, 0).putInt(PREF_DOLPHIN_CLOCK, 0)
+        }
+        e.commit()
+        applySustained()
+    }
 
     /** DS y 3DS: dos pantallas apiladas, la de abajo es tactil. */
     private fun isDualScreen() = config.system == "nds" || config.system == "3ds"

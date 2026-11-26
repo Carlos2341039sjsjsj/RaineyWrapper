@@ -79,6 +79,7 @@ object DolphinOptimize {
             on("dolphin_efb_to_texture"),
             off("dolphin_main_accurate_cpu_cache"),
             on("dolphin_dsp_hle"),
+            on("dolphin_skip_dupe_frames"),
         )),
         ExtraLevel("Equilibrado", listOf(
             Variable("dolphin_shader_compilation_mode", "Async (UberShaders)"),
@@ -101,6 +102,7 @@ object DolphinOptimize {
             on("dolphin_efb_to_texture"),
             off("dolphin_main_accurate_cpu_cache"),
             on("dolphin_dsp_hle"),
+            on("dolphin_skip_dupe_frames"),
             on("dolphin_gpu_texture_decoding"),
         )),
     )
