@@ -161,7 +161,7 @@ class TouchOverlay(
                     Face("A", KeyEvent.KEYCODE_A, -0.6f, 0.2f), Face("S", KeyEvent.KEYCODE_S, 0f, -0.5f),
                     Face("D", KeyEvent.KEYCODE_D, 0.6f, 0.2f),
                 ),
-                emptyList(),
+                listOf("P" to KeyEvent.KEYCODE_P), // P = pausa (Cactus McCoy 2)
                 selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
                 startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
                 keyboard = true,
@@ -254,7 +254,44 @@ class TouchOverlay(
         }
     }
 
-    private class Control(val label: String, val keyCode: Int, val rect: RectF, val round: Boolean)
+    /** [id] / [id0] = identidad original (para guardar posiciones); [label] / [keyCode] pueden cambiarse desde el editor. */
+    private class Control(val id: String, val id0: Int, val rect: RectF, val round: Boolean) {
+        var label: String = id
+        var keyCode: Int = id0
+    }
+
+    private val pickKeys: List<Pair<String, Int>> by lazy {
+        val l = mutableListOf<Pair<String, Int>>()
+        for (c in 'A'..'Z') l += (c.toString() to (KeyEvent.KEYCODE_A + (c - 'A')))
+        for (d in 0..9) l += (d.toString() to (KeyEvent.KEYCODE_0 + d))
+        l += listOf(
+            "SPC" to KeyEvent.KEYCODE_SPACE, "SHIFT" to KeyEvent.KEYCODE_SHIFT_LEFT, "CTRL" to KeyEvent.KEYCODE_CTRL_LEFT,
+            "ENTER" to KeyEvent.KEYCODE_ENTER, "ESC" to KeyEvent.KEYCODE_ESCAPE, "TAB" to KeyEvent.KEYCODE_TAB,
+            "," to KeyEvent.KEYCODE_COMMA, "." to KeyEvent.KEYCODE_PERIOD,
+        )
+        l
+    }
+
+    private fun keyName(k: Int): String = pickKeys.firstOrNull { it.second == k }?.first ?: "?"
+
+    /** Dialogo para cambiar la tecla del boton tocado (solo teclado web). */
+    private fun pickKeyFor(selKey: String) {
+        val i = selKey.substring(1, selKey.indexOf(':')).toIntOrNull() ?: return
+        val c = controls.getOrNull(i) ?: return
+        if (c.keyCode == MENU) return
+        val names = pickKeys.map { it.first }.toTypedArray()
+        try {
+            android.app.AlertDialog.Builder(context)
+                .setTitle("Tecla para este boton")
+                .setItems(names) { _, which ->
+                    layoutPrefs.edit().putInt("m:" + i + ":" + c.id, pickKeys[which].second).apply()
+                    relayout()
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        } catch (e: Throwable) {
+        }
+    }
 
     private val controls = mutableListOf<Control>()
     private var dpadCx = 0f
@@ -380,6 +417,10 @@ class TouchOverlay(
     private var selectedKey: String? = null
     private var lastX = 0f
     private var lastY = 0f
+    private var tapSame = false
+    private var moved = false
+    private var downX = 0f
+    private var downY = 0f
     private val edits: MutableMap<String, FloatArray> by lazy { loadEdits() }
     private val layoutPrefs: android.content.SharedPreferences
         get() = context.getSharedPreferences("touch_layout", 0)
@@ -417,6 +458,14 @@ class TouchOverlay(
     }
 
     private fun applyUserLayout(w: Float, h: Float) {
+        if (webLayout) controls.forEachIndexed { i, c ->
+            if (c.keyCode == MENU) return@forEachIndexed
+            val k = layoutPrefs.getInt("m:" + i + ":" + c.id, Int.MIN_VALUE)
+            if (k != Int.MIN_VALUE) {
+                c.keyCode = k
+                c.label = keyName(k)
+            }
+        }
         edits["dpad"]?.let { e ->
             dpadCx += e[0] * w
             dpadCy += e[1] * h
@@ -429,7 +478,7 @@ class TouchOverlay(
             stick.r *= e[2]
         }
         controls.forEachIndexed { i, c ->
-            val e = edits["c" + i + ":" + c.label] ?: return@forEachIndexed
+            val e = edits["c" + i + ":" + c.id] ?: return@forEachIndexed
             val cx = c.rect.centerX() + e[0] * w
             val cy = c.rect.centerY() + e[1] * h
             val hw = c.rect.width() / 2f * e[2]
@@ -446,7 +495,7 @@ class TouchOverlay(
     private fun keyAt(x: Float, y: Float): String? {
         for (i in controls.indices.reversed()) {
             val c = controls[i]
-            if (c.rect.contains(x, y)) return "c" + i + ":" + c.label
+            if (c.rect.contains(x, y)) return "c" + i + ":" + c.id
         }
         for (stick in sticks) {
             if (hypot(x - stick.cx, y - stick.cy) <= stick.r) return "s:" + stick.right
@@ -476,6 +525,9 @@ class TouchOverlay(
             }
             2 -> {
                 edits.clear()
+                val er = layoutPrefs.edit()
+                for (k in layoutPrefs.all.keys) if (k.startsWith("m:")) er.remove(k)
+                er.apply()
                 relayout()
             }
             3 -> {
@@ -503,15 +555,20 @@ class TouchOverlay(
                     draggingEl = false
                     panelPress(b)
                 } else {
+                    tapSame = selectedKey != null && selectedKey == keyAt(x, y)
                     selectedKey = keyAt(x, y)
                     draggingEl = selectedKey != null
                     lastX = x
                     lastY = y
+                    downX = x
+                    downY = y
+                    moved = false
                 }
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
                 val k = selectedKey
+                if (hypot(x - downX, y - downY) > 12f) moved = true
                 if (draggingEl && k != null) {
                     val e = edits.getOrPut(k) { floatArrayOf(0f, 0f, 1f) }
                     e[0] += (x - lastX) / width
@@ -521,7 +578,11 @@ class TouchOverlay(
                     relayout()
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> draggingEl = false
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val k = selectedKey
+                if (event.actionMasked == MotionEvent.ACTION_UP && tapSame && !moved && k != null && k.startsWith("c") && webLayout) pickKeyFor(k)
+                draggingEl = false
+            }
         }
         return true
     }
@@ -535,7 +596,7 @@ class TouchOverlay(
             canvas.drawRoundRect(r, r.height() / 2, r.height() / 2, panelFill)
             canvas.drawText(panelLabels[i], r.centerX(), r.centerY() + panelText.textSize / 3, panelText)
         }
-        canvas.drawText("Drag a control, then - / +", width / 2f, rects[0].top - 24f, panelText)
+        canvas.drawText(if (webLayout) "Arrastra un boton, usa - / +. Tocalo otra vez para cambiar su tecla" else "Drag a control, then - / +", width / 2f, rects[0].top - 24f, panelText)
         val k = selectedKey ?: return
         if (k == "dpad") {
             canvas.drawCircle(dpadCx, dpadCy, dpadR + 8f, selPaint)

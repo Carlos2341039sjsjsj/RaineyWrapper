@@ -214,6 +214,7 @@ class WebGameActivity : ComponentActivity() {
 
         // Los juegos de Unity WebGL traen sus controles: los de teclado empiezan ocultos.
         setupOverlay(hidden = isUnityWebGl())
+        addKeyboardButton()
         askControlsIfNeeded()
         view.loadUrl("https://$HOST/" + (if (isSwf()) "__swf.html" else Uri.encode(indexName)))
         view.requestFocus()
@@ -362,7 +363,22 @@ class WebGameActivity : ComponentActivity() {
     private fun askControlsIfNeeded() {
         if (!isSwf() || swfProfile() != null) return
         if (prefs.contains(modeKey()) || prefs.getBoolean(askedKey(), false)) return
-        data class Opt(val label: String, val mode: String, val wasd: Boolean)
+        val r = root
+        Thread {
+            val hint = if (r != null) SwfScan.scan(File(r, indexName)) else null
+            runOnUiThread { if (!isFinishing) showAskDialog(hint) }
+        }.start()
+    }
+
+    private fun hintNote(h: SwfScan.Hint?): String = when {
+        h == null -> ""
+        !h.keyboard -> "\n(parece un juego de mouse o toque)"
+        h.arrows -> "\n(usa teclado, con flechas)"
+        else -> "\n(usa teclado)"
+    }
+
+    private fun showAskDialog(hint: SwfScan.Hint?) {
+        data class Opt(val label: String, val mode: String, val wasd: Boolean, val hide: Boolean = false)
         val opts = listOf(
             Opt("Flechas + A / S / Z / X (la mayoria)", "webflash", false),
             Opt("Flechas + solo A y S (2 botones)", "webab", false),
@@ -372,14 +388,15 @@ class WebGameActivity : ComponentActivity() {
             Opt("Flechas + espacio, shift, ctrl (vehiculos)", "webcar", false),
             Opt("Combate con N / M / coma / punto", "webfight", false),
             Opt("Plataformas (flechas + saltar)", "webplat", false),
+            Opt("Solo toque / mouse (sin botones en pantalla)", "webflash", false, true),
         )
         dialog = AlertDialog.Builder(this)
-            .setTitle("Como se juega " + config.title + "?")
+            .setTitle("Como se juega " + config.title + "?" + hintNote(hint))
             .setItems(opts.map { it.label }.toTypedArray()) { _, which ->
                 val o = opts[which]
                 mode = o.mode
                 prefs.edit().putString(modeKey(), o.mode).putBoolean(wasdKey(), o.wasd).putBoolean(askedKey(), true).apply()
-                setupOverlay(false)
+                setupOverlay(o.hide)
             }
             .setNegativeButton("Elegir despues") { _, _ -> prefs.edit().putBoolean(askedKey(), true).apply() }
             .setOnDismissListener { focusGame() }
@@ -422,6 +439,37 @@ class WebGameActivity : ComponentActivity() {
         else -> "Ninguno (solo tactil)"
     }
 
+    private var kbButton: android.widget.TextView? = null
+
+    /** Boton fijo para abrir / cerrar el teclado del celular (nombres, codigos). */
+    private fun addKeyboardButton() {
+        val d = resources.displayMetrics.density
+        val btn = android.widget.TextView(this).apply {
+            text = "\u2328"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(Color.argb(110, 0, 0, 0))
+        }
+        val size = (44 * d).toInt()
+        val lp = FrameLayout.LayoutParams(size, size, android.view.Gravity.TOP or android.view.Gravity.END)
+        lp.topMargin = (48 * d).toInt()
+        lp.rightMargin = (6 * d).toInt()
+        btn.setOnClickListener {
+            val w = web ?: return@setOnClickListener
+            w.allowIme = !w.allowIme
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            if (w.allowIme) {
+                w.requestFocus()
+                imm.showSoftInput(w, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            } else {
+                imm.hideSoftInputFromWindow(w.windowToken, 0)
+            }
+        }
+        kbButton = btn
+        container.addView(btn, lp)
+    }
+
     private fun setupOverlay(hidden: Boolean = false) {
         overlay?.let { container.removeView(it) }
         overlay = null
@@ -440,6 +488,7 @@ class WebGameActivity : ComponentActivity() {
             }
             if (hidden) it.visibility = View.GONE
             container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            kbButton?.bringToFront()
         }
     }
 
@@ -740,6 +789,12 @@ window.addEventListener("DOMContentLoaded", function () {
                 web?.reload()
             })
         }
+        if (overlay != null) items.add("Editar botones (mover, tamaño y teclas)" to {
+            overlay?.let { ov ->
+                ov.visibility = View.VISIBLE
+                ov.post { ov.beginEdit() }
+            }
+        })
         items.add("Teclado del celular: " + (if (web?.allowIme == true) "si" else "no") to {
             web?.let { w ->
                 w.allowIme = !w.allowIme
