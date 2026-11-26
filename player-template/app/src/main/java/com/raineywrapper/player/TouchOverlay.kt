@@ -155,6 +155,17 @@ class TouchOverlay(
                 startLabel = "PAUSA", startKey = KeyEvent.KEYCODE_SPACE,
                 keyboard = true,
             )
+            // Tres botones A / S / D (Cactus McCoy: A salta, S ataca, D suelta el arma); la cruz mueve con las flechas.
+            "webabd" -> Layout(
+                listOf(
+                    Face("A", KeyEvent.KEYCODE_A, -0.6f, 0.2f), Face("S", KeyEvent.KEYCODE_S, 0f, -0.5f),
+                    Face("D", KeyEvent.KEYCODE_D, 0.6f, 0.2f),
+                ),
+                emptyList(),
+                selectLabel = "ESC", selectKey = KeyEvent.KEYCODE_ESCAPE,
+                startLabel = "ENTER", startKey = KeyEvent.KEYCODE_ENTER,
+                keyboard = true,
+            )
             "webvn" -> Layout(
                 listOf(Face("ENTER", KeyEvent.KEYCODE_ENTER, 0f, 0f)),
                 listOf(

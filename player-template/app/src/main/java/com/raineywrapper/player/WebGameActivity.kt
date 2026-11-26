@@ -136,6 +136,20 @@ class WebGameActivity : ComponentActivity() {
         fun ready() {
             runOnUiThread { focusGame() }
         }
+
+        /** "temperatura de la bateria|estado termico (0 normal ... 6 critico, -1 sin dato)|1 si esta cargando". */
+        @JavascriptInterface
+        fun stats(): String {
+            return try {
+                val i = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val temp = (i?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10.0
+                val plugged = if ((i?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0) 1 else 0
+                val thermal = if (Build.VERSION.SDK_INT >= 29) (getSystemService(POWER_SERVICE) as android.os.PowerManager).currentThermalStatus else -1
+                "$temp|$thermal|$plugged"
+            } catch (e: Exception) {
+                "?|?|0"
+            }
+        }
     }
 
     override fun onPause() {
@@ -327,6 +341,8 @@ class WebGameActivity : ComponentActivity() {
 
     private val swfProfiles = listOf(
         SwfProfile(listOf("superfighter"), emptyList(), "webfight", false),
+        // Cactus McCoy 1: flechas para moverse, A salta, S ataca, D suelta el arma (confirmado en el propio juego); abajo recoge armas.
+        SwfProfile(listOf("cactus", "mccoy"), emptyList(), "webabd", false),
         SwfProfile(listOf("happy", "wheel"), emptyList(), "webcar", false),
         // Chaos Faction 1 y 2: flechas (saltar / escudo), Z y X atacan, SHIFT cuerpo a cuerpo, D suelta el arma, ESPACIO pausa.
         SwfProfile(listOf("chaos", "faction"), emptyList(), "webcf", false),
@@ -350,6 +366,7 @@ class WebGameActivity : ComponentActivity() {
         val opts = listOf(
             Opt("Flechas + A / S / Z / X (la mayoria)", "webflash", false),
             Opt("Flechas + solo A y S (2 botones)", "webab", false),
+            Opt("Flechas + A / S / D (3 botones)", "webabd", false),
             Opt("Peleas: Z / X / SHIFT / D (Chaos Faction)", "webcf", false),
             Opt("Movimiento con W A S D", "webflash", true),
             Opt("Flechas + espacio, shift, ctrl (vehiculos)", "webcar", false),
@@ -400,6 +417,7 @@ class WebGameActivity : ComponentActivity() {
         "webflash" -> "Flash clasico (Z/X/C/SPC + A/S/D/SHIFT)"
         "webcar" -> "Vehiculos / Happy Wheels (SPC/SHIFT/CTRL/Z)"
         "webab" -> "Dos botones (A / S)"
+        "webabd" -> "Tres botones (A / S / D)"
         "webcf" -> "Peleas de plataforma (Z/X/SHIFT/D)"
         else -> "Ninguno (solo tactil)"
     }
@@ -475,12 +493,34 @@ class WebGameActivity : ComponentActivity() {
   var d = document.createElement('div');
   d.style.cssText = 'position:fixed;left:4px;top:2px;font:12px monospace;color:#0f0;background:rgba(0,0,0,.6);padding:1px 6px;z-index:99;pointer-events:none';
   document.body.appendChild(d);
-  var n = 0, t = performance.now(), fps = 0, down = {};
-  window.addEventListener('keydown', function (e) { down[e.code] = 1; }, true);
-  window.addEventListener('keyup', function (e) { delete down[e.code]; }, true);
-  function f(now) { n++; if (now - t >= 1000) { fps = Math.round(n * 1000 / (now - t)); n = 0; t = now; } requestAnimationFrame(f); }
+  var n = 0, t = performance.now(), fps = 0, t0 = t, minFps = 999, minT = t;
+  var st = { temp: '?', thermal: '?', plug: '' }, drops = [];
+  // Cada segundo: si el juego va a menos del 80 % de su velocidad se anota (despues de los primeros 8 s de carga).
+  function sample(now) {
+    if (now - minT > 10000) { minFps = 999; minT = now; }
+    if (fps < minFps) minFps = fps;
+    var g = window.__swfFps || 0;
+    if (g && fps > 0 && fps < g * 0.8 && now - t0 > 8000) {
+      drops.push(Math.round((now - t0) / 1000) + 's: ' + fps + ' de ' + g + ' FPS, ' + st.temp + ' C, termico ' + st.thermal + st.plug);
+      if (drops.length > 40) drops.shift();
+    }
+  }
+  function f(now) { n++; if (now - t >= 1000) { fps = Math.round(n * 1000 / (now - t)); n = 0; t = now; sample(now); } requestAnimationFrame(f); }
   requestAnimationFrame(f);
-  setInterval(function () { d.textContent = fps + ' FPS' + (window.__swfFps ? ' (juego ' + window.__swfFps + ')' : '') + (window.__err ? ' ERR ' + window.__err : ''); }, ${if (lite) 500 else 100});
+  setInterval(function () {
+    try {
+      if (window.RaineyNative && window.RaineyNative.stats) {
+        var p = String(window.RaineyNative.stats()).split('|');
+        st.temp = p[0]; st.thermal = p[1]; st.plug = p[2] === '1' ? ' cargando' : '';
+      }
+    } catch (e) { }
+  }, 2000);
+  window.__drops = function () { return drops.length ? drops.slice(-15).join('\n') : 'Sin bajones registrados.'; };
+  setInterval(function () {
+    d.textContent = fps + ' FPS' + (window.__swfFps ? ' (juego ' + window.__swfFps + ')' : '') +
+      ' min ' + (minFps === 999 ? '-' : minFps) + ' | ' + st.temp + 'C T' + st.thermal + st.plug +
+      (window.__err ? ' ERR ' + window.__err : '');
+  }, ${if (lite) 500 else 200});
 })();
 </script>""" else ""
         val html = """<!doctype html>
@@ -685,6 +725,16 @@ window.addEventListener("DOMContentLoaded", function () {
                 prefs.edit().putBoolean("swf_mute", !swfMuted()).apply()
                 web?.reload()
             })
+            items.add("Registro de bajones de velocidad" to {
+                web?.evaluateJavascript("window.__drops&&window.__drops()") { v ->
+                    val text = try { org.json.JSONTokener(v).nextValue() as? String } catch (e: Exception) { null } ?: "Sin datos todavia."
+                    dialog = AlertDialog.Builder(this)
+                        .setTitle("Bajones de velocidad")
+                        .setMessage(text)
+                        .setPositiveButton("Cerrar", null)
+                        .show()
+                }
+            })
             items.add("Modo ligero: " + (if (swfLite()) "si" else "no") to {
                 prefs.edit().putBoolean("swf_lite", !swfLite()).apply()
                 web?.reload()
@@ -844,7 +894,7 @@ window.addEventListener("DOMContentLoaded", function () {
     private companion object {
         const val HOST = "rainey.game"
         const val KEY_MOVED = "moved_root"
-        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webflash", "webcar", "webab", "webcf", "webvn", "none")
+        val MODES = listOf("rpgmv", "webplat", "webplat2", "webfight", "webflash", "webcar", "webab", "webabd", "webcf", "webvn", "none")
         val MIME = mapOf(
             "js" to "text/javascript", "mjs" to "text/javascript", "json" to "application/json", "wasm" to "application/wasm",
             "ogg" to "audio/ogg", "m4a" to "audio/mp4", "mp3" to "audio/mpeg", "wav" to "audio/wav",
