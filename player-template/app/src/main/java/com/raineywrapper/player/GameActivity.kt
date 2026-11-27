@@ -64,6 +64,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_PSP_GFX = "psp_gfx_level"
         private const val PREF_DOLPHIN_CLOCK = "dolphin_clock_level"
         private const val PREF_PSP_FS = "psp_frameskip_level"
+        private const val PREF_PSP_CHEATS = "psp_cheats"
         private const val PREF_N64_OPT = "n64_opt_level"
         private const val PREF_MOVED_PATH = "moved_path"
         private const val PREF_MOVED_FROM = "moved_from"
@@ -79,6 +80,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_DS_LAND = "ds_landscape"
         private const val PREF_DS_PERF = "ds_perf_high"
         private const val PREF_DS_SOUND = "ds_sound_level"
+        private const val PREF_DS_WFC = "ds_wfc_server"
     }
 
     private lateinit var container: FrameLayout
@@ -260,7 +262,7 @@ class GameActivity : ComponentActivity() {
         startedPspBackend = pspBackend()
             startedWiiController = wiiController()
             variables = coreVariables(config.system) +
-                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system == "n64") N64Options.levels().getOrNull(startedN64)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PspFrameskip.levels().getOrNull(startedPspFs)?.variables.orEmpty() else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) dolphinClockVars() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
+                listOfNotNull(InternalResolution.levels(config.system).getOrNull(startedResolution)?.variable) + (if (config.system == "psp") PpssppMultiplayer.levels().getOrNull(startedMultiplayer)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PpssppGraphics.levels().getOrNull(startedPspGfx)?.variables.orEmpty() else emptyList()) + (if (config.system == "n64") N64Options.levels().getOrNull(startedN64)?.variables.orEmpty() else emptyList()) + (if (config.system == "psp") PspFrameskip.levels().getOrNull(startedPspFs)?.variables.orEmpty() else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) dolphinClockVars() else emptyList()) + modTextureVariables() + pspBackendVariables() + (if (config.system == "psp" && prefs().getBoolean(PREF_PSP_CHEATS, false)) listOf(Variable("ppsspp_cheats", "enabled")) else emptyList()) + (if (config.system in listOf("wii", "gamecube", "gc")) DolphinOptimize.levels().getOrNull(startedDolphin)?.variables.orEmpty() else emptyList())
         }
 
         // Imagen invertida (3DS): el codigo nativo lee esta variable al crear el video.
@@ -404,7 +406,7 @@ class GameActivity : ComponentActivity() {
             Variable("melonds_jit_fast_memory", "enabled"),
             Variable("melonds_jit_branch_optimisations", "enabled"),
             Variable("melonds_jit_literal_optimisations", "enabled"),
-        ) else emptyArray<Variable>()) + dsSoundVars()
+        ) else emptyArray<Variable>()) + dsSoundVars() + arrayOf(Variable("melonds_firmware_wfc_dns", dsWfcValue()))
         else -> emptyArray()
     }
 
@@ -553,6 +555,10 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putBoolean(PREF_DS_PERF, !prefs().getBoolean(PREF_DS_PERF, false)).commit()
             restartGame()
         }.takeIf { config.system == "nds" },
+        GameMenu.Item({ "Servidor online DS: " + dsWfcLabel() }) {
+            prefs().edit().putInt(PREF_DS_WFC, (dsWfcLevel() + 1) % 3).commit()
+            restartGame()
+        }.takeIf { config.system == "nds" },
         GameMenu.Item({ "Sonido DS: " + dsSoundLabel() }) {
             prefs().edit().putInt(PREF_DS_SOUND, (dsSoundLevel() + 1) % 3).commit()
             restartGame()
@@ -618,6 +624,10 @@ class GameActivity : ComponentActivity() {
         GameMenu.Item({ "PSP salto de cuadros: " + (PspFrameskip.levels().getOrNull(pspFsLevel())?.label ?: "-") }) {
             prefs().edit().putInt(PREF_PSP_FS, (pspFsLevel() + 1) % PspFrameskip.levels().size).commit()
             menu.refresh()
+        }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "PSP cheats internos: " + (if (prefs().getBoolean(PREF_PSP_CHEATS, false)) "si" else "no") }) {
+            prefs().edit().putBoolean(PREF_PSP_CHEATS, !prefs().getBoolean(PREF_PSP_CHEATS, false)).commit()
+            restartGame()
         }.takeIf { config.system == "psp" },
         GameMenu.Item({ "Reloj CPU: " + listOf("100% (normal)", "80%", "70%", "60%")[dolphinClock()] }) {
             prefs().edit().putInt(PREF_DOLPHIN_CLOCK, (dolphinClock() + 1) % 4).commit()
@@ -793,6 +803,13 @@ class GameActivity : ComponentActivity() {
 
     /** Sonido DS: 0 Estable (None, 10-bit: lo mas liviano, suena seco), 1 Equilibrado (Cosine, 16-bit), 2 Calidad (Cubic, 16-bit). */
     private fun dsSoundLevel() = prefs().getInt(PREF_DS_SOUND, 1).coerceIn(0, 2)
+
+    /** Servidor online de DS: 0 Kaeru WFC (por defecto del nucleo), 1 Wiimmfi (el mas usado en Mario Kart DS), 2 AltWFC. Todos los jugadores deben usar el mismo. */
+    private fun dsWfcLevel() = prefs().getInt(PREF_DS_WFC, 0).coerceIn(0, 2)
+
+    private fun dsWfcLabel() = listOf("Kaeru WFC", "Wiimmfi", "AltWFC")[dsWfcLevel()]
+
+    private fun dsWfcValue() = listOf("Kaeru WFC (178.62.43.212)", "Wiimmfi (95.217.77.181)", "AltWFC (172.104.88.237)")[dsWfcLevel()]
 
     private fun dsSoundLabel() = listOf("Estable", "Equilibrado", "Calidad")[dsSoundLevel()]
 
