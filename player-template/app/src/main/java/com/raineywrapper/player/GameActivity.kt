@@ -274,7 +274,7 @@ class GameActivity : ComponentActivity() {
         val view = GLRetroView(this, data)
         retroView = view
         gamepad = GamepadInput(view, config.system, startedWiiController)
-        gamepad?.padMode = if (config.system in listOf("n64", "gb2")) padModeLevel() else 0
+        gamepad?.padMode = if (multiPadSystem()) padModeLevel() else 0
         lifecycle.addObserver(view)
         // Registered after the view's own observers, so on resume this runs after
         // LibretroDroid restarts emulation and can re-pause it if the menu is open.
@@ -395,7 +395,10 @@ class GameActivity : ComponentActivity() {
             Variable("melonds_jit_enable", "enabled"),
             // Pantalla tactil: el modo "Touch" lee el puntero que manda el reproductor (el modo por
             // defecto lee un mouse y por eso el dedo no hacia nada). Nombre comprobado con `strings`.
-            Variable("melonds_touch_mode", "Touch"),
+            Variable("melonds_touch_mode", "touch"),
+            // Nucleo nuevo: sin firmware original arranca en modo directo con el BIOS integrado.
+            Variable("melonds_boot_mode", "direct"),
+            Variable("melonds_sysfile_mode", "builtin"),
         ) + (if (prefs().getBoolean(PREF_DS_PERF, false)) arrayOf(
             // "Rendimiento alto": optimizaciones extra del JIT (se pueden quitar desde el menu).
             Variable("melonds_jit_fast_memory", "enabled"),
@@ -577,7 +580,7 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_PAD_MODE, (padModeLevel() + 1) % 3).apply()
             gamepad?.let { it.padMode = padModeLevel(); it.resetPorts() }
             menu.refresh()
-        }.takeIf { config.system in listOf("n64", "gb2") },
+        }.takeIf { multiPadSystem() },
         GameMenu.Item({ "3DS renderer: " + azaharApiLabel() }) {
             prefs().edit().putInt(PREF_3DS_API, (azaharApi() + 1) % 4).apply()
             menu.refresh()
@@ -794,9 +797,9 @@ class GameActivity : ComponentActivity() {
     private fun dsSoundLabel() = listOf("Estable", "Equilibrado", "Calidad")[dsSoundLevel()]
 
     private fun dsSoundVars(): Array<Variable> = when (dsSoundLevel()) {
-        0 -> arrayOf(Variable("melonds_audio_interpolation", "None"), Variable("melonds_audio_bitrate", "10-bit"))
-        2 -> arrayOf(Variable("melonds_audio_interpolation", "Cubic"), Variable("melonds_audio_bitrate", "16-bit"))
-        else -> arrayOf(Variable("melonds_audio_interpolation", "Cosine"), Variable("melonds_audio_bitrate", "16-bit"))
+        0 -> arrayOf(Variable("melonds_audio_interpolation", "None"), Variable("melonds_audio_bitdepth", "10-bit"))
+        2 -> arrayOf(Variable("melonds_audio_interpolation", "cubic"), Variable("melonds_audio_bitdepth", "16-bit"))
+        else -> arrayOf(Variable("melonds_audio_interpolation", "cosine"), Variable("melonds_audio_bitdepth", "16-bit"))
     }
 
     /**
@@ -967,6 +970,9 @@ class GameActivity : ComponentActivity() {
             it.visibility = View.GONE
         }
     }
+
+    /** Sistemas con juegos de varios jugadores en el mismo equipo (cada mando Bluetooth toma el siguiente puerto). DS, 3DS y PSP son de un solo jugador. */
+    private fun multiPadSystem() = config.system in listOf("n64", "gb2", "wii", "gamecube", "gc", "ps2", "psx", "dreamcast", "snes", "nes", "genesis", "pce")
 
     private fun padModeLevel() = prefs().getInt(PREF_PAD_MODE, 0).coerceIn(0, 2)
 

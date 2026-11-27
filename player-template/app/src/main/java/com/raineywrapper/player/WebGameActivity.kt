@@ -258,6 +258,13 @@ class WebGameActivity : ComponentActivity() {
         return lp
     }
 
+    /** Resolucion interna de Flash: 0 = normal, 1 = 75 %, 2 = 50 % (menos pixeles que dibujar; el juego se ve un poco mas suave/borroso). */
+    private fun swfScale() = prefs.getInt("swf_scale", 0).coerceIn(0, 2)
+
+    private fun swfScaleFactor(): Float = listOf(1f, 0.75f, 0.5f)[swfScale()].let { if (swfLite() || swfRecording()) minOf(it, 0.75f) else it }
+
+    private fun swfScaleLabel() = listOf("normal", "media (75%)", "baja (50%)")[swfScale()] + (if ((swfLite() || swfRecording()) && swfScale() == 0) " (ligero/grabacion: 75%)" else "")
+
     // Calidad de dibujo de Ruffle: baja (sin suavizado de bordes) arranca como predeterminada, es lo mas liviano.
     private fun swfQuality() = if (swfLite()) "low" else prefs.getString("swf_quality", "low").let { if (it == "medium" || it == "high") it else "low" }
 
@@ -309,7 +316,11 @@ class WebGameActivity : ComponentActivity() {
     }
 
     /** El contador de FPS se muestra siempre en los juegos Flash. */
-    private fun swfFps() = true
+    /** Medidor de FPS: se puede ocultar (el modo grabacion lo oculta, porque consume algo de CPU). */
+    private fun swfFps() = !swfRecording() && prefs.getBoolean("swf_fps_box", true)
+
+    /** Modo grabacion: sin medidor y con la resolucion de Flash al 75 % como maximo, para que grabar la pantalla le quite menos al juego. */
+    private fun swfRecording() = prefs.getBoolean("swf_rec", false)
 
     /** Sonido apagado: sirve para probar si el audio le quita velocidad a un juego pesado. */
     private fun swfMuted() = prefs.getBoolean("swf_mute", false)
@@ -534,6 +545,8 @@ class WebGameActivity : ComponentActivity() {
     /** Pagina que abre el .swf con Ruffle (reproductor de Flash que viaja dentro del APK, en assets/ruffle). */
     private fun swfPage(): WebResourceResponse {
         val lite = swfLite()
+        val sf = swfScaleFactor()
+        val scaleJs = if (sf < 1f) "(function(){var r=window.devicePixelRatio*" + sf + ";Object.defineProperty(window,'devicePixelRatio',{get:function(){return r;}});})();\n" else ""
         val renderer = if (swfRenderer() == "auto") "" else ", preferredRenderer: \"" + swfRenderer() + "\""
         // Contador de FPS (los de la pantalla) y teclas que la pagina ve apretadas: sirve para medir y para cazar teclas pegadas.
         val fpsJs = if (swfFps()) """
@@ -579,7 +592,7 @@ class WebGameActivity : ComponentActivity() {
 <script>
 window.addEventListener("error", function (e) { window.__err = String(e.message || e).slice(0, 60); });
 window.RufflePlayer = window.RufflePlayer || {};
-window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, contextMenu: "off", quality: "${swfQuality()}"$renderer };
+${scaleJs}window.RufflePlayer.config = { autoplay: "on", unmuteOverlay: "hidden", letterbox: "on", splashScreen: false, warnOnUnsupportedContent: false, contextMenu: "off", quality: "${swfQuality()}"$renderer };
 </script>
 <script src="/__ruffle/ruffle.js"></script>
 </head><body><div id="p"></div>
@@ -760,6 +773,18 @@ window.addEventListener("DOMContentLoaded", function () {
             items.add("Calidad de Flash: " + (if (swfLite()) "Baja (modo ligero)" else qualityLabel()) to {
                 val next = when (swfQuality()) { "low" -> "medium"; "medium" -> "high"; else -> "low" }
                 prefs.edit().putString("swf_quality", next).apply()
+                web?.reload()
+            })
+            items.add("Modo grabacion: " + (if (swfRecording()) "si (sin medidor, 75%)" else "no") to {
+                prefs.edit().putBoolean("swf_rec", !swfRecording()).apply()
+                web?.reload()
+            })
+            items.add("Medidor de FPS: " + (if (swfRecording()) "oculto (modo grabacion)" else if (swfFps()) "visible" else "oculto") to {
+                prefs.edit().putBoolean("swf_fps_box", !prefs.getBoolean("swf_fps_box", true)).apply()
+                web?.reload()
+            })
+            items.add("Resolucion de Flash: " + swfScaleLabel() to {
+                prefs.edit().putInt("swf_scale", (swfScale() + 1) % 3).apply()
                 web?.reload()
             })
             items.add("Cruz de movimiento: " + (if (dpadWasd()) "W A S D" else "flechas") to {

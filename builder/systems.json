@@ -106,7 +106,7 @@
     },
     "nds": {
       "name": "Nintendo DS",
-      "core": "melonds",
+      "core": "melondsds",
       "extensions": [
         "nds"
       ],
