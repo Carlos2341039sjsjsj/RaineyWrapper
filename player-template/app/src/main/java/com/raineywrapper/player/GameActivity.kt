@@ -117,6 +117,11 @@ class GameActivity : ComponentActivity() {
     private val pickMod = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importMod(uri)
     }
+    private var skinKey: String? = null
+    private val pickSkin = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val k = skinKey
+        if (uri != null && k != null) overlay?.applySkin(k, uri)
+    }
     private val pickSave = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importSave(uri)
     }
@@ -304,6 +309,10 @@ class GameActivity : ComponentActivity() {
             onMenu = { openMenu() },
         ).also {
             it.visibility = if (touchControlsEnabled()) View.VISIBLE else View.GONE
+            it.onPickImage = { key ->
+                skinKey = key
+                pickSkin.launch(arrayOf("image/*"))
+            }
             // DS en horizontal: el overlay cubre toda la pantalla; lo que no es un control va al juego (lapiz).
             if (isDualScreen() && dsLandscape()) it.onPass = { ev -> view.onTouchEvent(ev) }
             if (dsSplit != null) {

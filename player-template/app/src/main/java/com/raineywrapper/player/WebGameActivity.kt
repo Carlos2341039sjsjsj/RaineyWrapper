@@ -45,6 +45,50 @@ class WebGameActivity : ComponentActivity() {
     private lateinit var config: GameConfig
     private var web: NoImeWebView? = null
     private var overlay: TouchOverlay? = null
+    private var skinKey: String? = null
+    private val pickSkin = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        val k = skinKey
+        if (uri != null && k != null) overlay?.applySkin(k, uri)
+    }
+
+    @Volatile private var gameLang: GameLang.Result? = null
+    @Volatile private var gameLangDone = false
+
+    /** Mira el idioma del juego (solo RPG Maker MV/MZ). No traduce: solo avisa. */
+    private fun detectGameLang() {
+        val r = root ?: return
+        if (isSwf()) {
+            gameLangDone = true
+            return
+        }
+        Thread {
+            val res = GameLang.detect(r)
+            gameLang = res
+            gameLangDone = true
+            if (res != null && res.code != "es" && !prefs.getBoolean("lang_notified", false)) {
+                prefs.edit().putBoolean("lang_notified", true).apply()
+                runOnUiThread {
+                    if (!isFinishing) Toast.makeText(this, "Este juego parece estar en " + res.label + " (menu: Idioma del juego)", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun langMenuLabel(): String {
+        if (!gameLangDone) return "analizando..."
+        return gameLang?.label ?: "no detectado"
+    }
+
+    private fun showLangInfo() {
+        val l = gameLang
+        val msg = when {
+            !gameLangDone -> "Todavia estoy analizando el texto del juego."
+            l == null -> "No pude detectar el idioma. Este detector solo lee juegos de RPG Maker MV/MZ (carpeta data)."
+            l.code == "es" -> "El juego ya esta en espanol."
+            else -> "El juego parece estar en " + l.label + ". La traduccion automatica sin internet todavia no esta disponible en esta version: por ahora el detector solo avisa del idioma."
+        }
+        AlertDialog.Builder(this).setTitle("Idioma del juego").setMessage(msg).setPositiveButton("OK", null).show()
+    }
     private var root: File? = null
     private var indexName = "index.html"
     private var dialog: AlertDialog? = null
@@ -216,6 +260,7 @@ class WebGameActivity : ComponentActivity() {
         setupOverlay(hidden = isUnityWebGl())
         addKeyboardButton()
         askControlsIfNeeded()
+        detectGameLang()
         view.loadUrl("https://$HOST/" + (if (isSwf()) "__swf.html" else Uri.encode(indexName)))
         view.requestFocus()
         val imeHider = object : Runnable {
@@ -498,6 +543,10 @@ class WebGameActivity : ComponentActivity() {
                 view.dispatchTouchEvent(ev)
             }
             if (hidden) it.visibility = View.GONE
+            it.onPickImage = { key ->
+                skinKey = key
+                pickSkin.launch(arrayOf("image/*"))
+            }
             container.addView(it, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             kbButton?.bringToFront()
         }
@@ -820,6 +869,7 @@ window.addEventListener("DOMContentLoaded", function () {
                 ov.post { ov.beginEdit() }
             }
         })
+        if (!isSwf() && (!gameLangDone || gameLang != null)) items.add("Idioma del juego: " + langMenuLabel() to { showLangInfo() })
         items.add("Teclado del celular: " + (if (web?.allowIme == true) "si" else "no") to {
             web?.let { w ->
                 w.allowIme = !w.allowIme

@@ -411,6 +411,160 @@ class TouchOverlay(
     private val pathB = android.graphics.Path()
     private val textColor = Color.argb(220, 255, 255, 255)
 
+    // ---- Imagenes en los botones ----
+    /** La actividad abre el selector de imagen y despues llama a applySkin(clave, uri). */
+    var onPickImage: ((String) -> Unit)? = null
+    private val skins = mutableMapOf<String, android.graphics.Bitmap?>()
+    private val skinPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val skinClip = android.graphics.Path()
+
+    private fun skinFile(key: String): java.io.File =
+        java.io.File(java.io.File(context.filesDir, "skins"), key.replace(Regex("[^A-Za-z0-9]"), "_") + ".png")
+
+    private fun skinFor(key: String): android.graphics.Bitmap? {
+        if (skins.containsKey(key)) return skins[key]
+        val f = skinFile(key)
+        val b = try {
+            if (f.isFile) android.graphics.BitmapFactory.decodeFile(f.absolutePath) else null
+        } catch (e: Throwable) {
+            null
+        }
+        skins[key] = b
+        return b
+    }
+
+    /** Reduce la imagen elegida (recorte cuadrado de 256 px), la guarda y la usa en ese boton. */
+    fun applySkin(key: String, uri: android.net.Uri) {
+        val ctx = context.applicationContext
+        Thread {
+            var result: android.graphics.Bitmap? = null
+            try {
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+                var sample = 1
+                while (bounds.outWidth / (sample * 2) >= 512 && bounds.outHeight / (sample * 2) >= 512) sample *= 2
+                val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                val src = ctx.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+                if (src != null) {
+                    val side = minOf(src.width, src.height)
+                    val square = android.graphics.Bitmap.createBitmap(src, (src.width - side) / 2, (src.height - side) / 2, side, side)
+                    val scaled = android.graphics.Bitmap.createScaledBitmap(square, 256, 256, true)
+                    val f = skinFile(key)
+                    f.parentFile?.mkdirs()
+                    java.io.FileOutputStream(f).use { scaled.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    result = scaled
+                }
+            } catch (e: Throwable) {
+                result = null
+            }
+            val done = result
+            post {
+                if (done != null) {
+                    skins[key] = done
+                    invalidate()
+                } else {
+                    android.widget.Toast.makeText(context, "No se pudo usar esa imagen", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun removeSkin(key: String) {
+        skins[key] = null
+        try {
+            skinFile(key).delete()
+        } catch (e: Throwable) {
+        }
+        invalidate()
+    }
+
+    private fun drawSkin(canvas: Canvas, c: Control, bmp: android.graphics.Bitmap, pressed: Boolean) {
+        val r = c.rect
+        skinClip.reset()
+        if (c.round) {
+            skinClip.addOval(r, android.graphics.Path.Direction.CW)
+        } else {
+            val rad = r.height() / 2f
+            skinClip.addRoundRect(r, rad, rad, android.graphics.Path.Direction.CW)
+        }
+        // Recorte centrado: la imagen no se estira en los botones alargados.
+        val aspect = r.width() / r.height()
+        val bw = bmp.width.toFloat()
+        val bh = bmp.height.toFloat()
+        val src = if (aspect >= bw / bh) {
+            val h = bw / aspect
+            android.graphics.Rect(0, ((bh - h) / 2f).toInt(), bw.toInt(), ((bh + h) / 2f).toInt())
+        } else {
+            val w = bh * aspect
+            android.graphics.Rect(((bw - w) / 2f).toInt(), 0, ((bw + w) / 2f).toInt(), bh.toInt())
+        }
+        canvas.save()
+        canvas.clipPath(skinClip)
+        canvas.drawBitmap(bmp, src, r, skinPaint)
+        if (pressed) {
+            tint.color = Color.argb(110, 0, 0, 0)
+            canvas.drawPath(skinClip, tint)
+        }
+        canvas.restore()
+        canvas.drawPath(skinClip, ringStyle(Color.argb(200, 255, 255, 255), 3f))
+    }
+
+    /** Cruz: se dibuja como siempre y, si tiene imagen, esta va en el centro (entre las cuatro flechas). */
+    private fun drawDpad(canvas: Canvas) {
+        drawDpadBase(canvas)
+        if (dpadR <= 0f) return
+        val bmp = skinFor("dpad") ?: return
+        val kr = dpadR * 0.32f
+        skinClip.reset()
+        skinClip.addCircle(dpadCx, dpadCy, kr, android.graphics.Path.Direction.CW)
+        canvas.save()
+        canvas.clipPath(skinClip)
+        canvas.drawBitmap(bmp, null, RectF(dpadCx - kr, dpadCy - kr, dpadCx + kr, dpadCy + kr), skinPaint)
+        canvas.restore()
+        canvas.drawPath(skinClip, ringStyle(Color.argb(210, 255, 255, 255), 3f))
+    }
+
+    /** Stick analogico: se dibuja como siempre y, si tiene imagen, esta tapa la perilla y se mueve con ella. */
+    private fun drawStick(canvas: Canvas, stick: Stick) {
+        drawStickBase(canvas, stick)
+        val bmp = skinFor("s:" + stick.right) ?: return
+        val kx = stick.cx + stick.x * stick.r * 0.6f
+        val ky = stick.cy + stick.y * stick.r * 0.6f
+        val kr = stick.r * 0.44f
+        skinClip.reset()
+        skinClip.addCircle(kx, ky, kr, android.graphics.Path.Direction.CW)
+        canvas.save()
+        canvas.clipPath(skinClip)
+        canvas.drawBitmap(bmp, null, RectF(kx - kr, ky - kr, kx + kr, ky + kr), skinPaint)
+        if (stick.pointerId >= 0) {
+            tint.color = Color.argb(90, 0, 0, 0)
+            canvas.drawPath(skinClip, tint)
+        }
+        canvas.restore()
+        canvas.drawPath(skinClip, ringStyle(Color.argb(210, 255, 255, 255), 3f))
+    }
+
+    /** Opciones del boton seleccionado en el editor: cambiar tecla, poner o quitar imagen. */
+    private fun controlOptions(selKey: String) {
+        val opts = mutableListOf<Pair<String, () -> Unit>>()
+        if (selKey.startsWith("c")) {
+            val i = selKey.substring(1, selKey.indexOf(':')).toIntOrNull() ?: return
+            val c = controls.getOrNull(i) ?: return
+            if (webLayout && c.keyCode != MENU) opts.add("Cambiar tecla" to { pickKeyFor(selKey) })
+        }
+        if (onPickImage != null) opts.add("Poner una imagen" to { onPickImage?.invoke(selKey) })
+        if (skinFor(selKey) != null) opts.add("Quitar la imagen" to { removeSkin(selKey) })
+        if (opts.isEmpty()) return
+        try {
+            android.app.AlertDialog.Builder(context)
+                .setTitle("Este boton")
+                .setItems(opts.map { it.first }.toTypedArray()) { _, which -> opts[which].second() }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        } catch (e: Throwable) {
+        }
+    }
+
     // ---- Editor de controles ----
     private var editMode = false
     private var draggingEl = false
@@ -580,7 +734,7 @@ class TouchOverlay(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 val k = selectedKey
-                if (event.actionMasked == MotionEvent.ACTION_UP && tapSame && !moved && k != null && k.startsWith("c") && webLayout) pickKeyFor(k)
+                if (event.actionMasked == MotionEvent.ACTION_UP && tapSame && !moved && k != null && (k.startsWith("c") || k.startsWith("s:") || k == "dpad")) controlOptions(k)
                 draggingEl = false
             }
         }
@@ -596,7 +750,7 @@ class TouchOverlay(
             canvas.drawRoundRect(r, r.height() / 2, r.height() / 2, panelFill)
             canvas.drawText(panelLabels[i], r.centerX(), r.centerY() + panelText.textSize / 3, panelText)
         }
-        canvas.drawText(if (webLayout) "Arrastra un boton, usa - / +. Tocalo otra vez para cambiar su tecla" else "Drag a control, then - / +", width / 2f, rects[0].top - 24f, panelText)
+        canvas.drawText("Arrastra un boton, usa - / +. Tocalo otra vez para " + (if (webLayout) "cambiar tecla o poner una imagen" else "poner una imagen"), width / 2f, rects[0].top - 24f, panelText)
         val k = selectedKey ?: return
         if (k == "dpad") {
             canvas.drawCircle(dpadCx, dpadCy, dpadR + 8f, selPaint)
@@ -684,7 +838,7 @@ class TouchOverlay(
         return ring
     }
 
-    private fun drawDpad(canvas: Canvas) {
+    private fun drawDpadBase(canvas: Canvas) {
         if (webLayout) {
             drawKeyDpad(canvas)
             return
@@ -782,7 +936,7 @@ class TouchOverlay(
         }
     }
 
-    private fun drawStick(canvas: Canvas, stick: Stick) {
+    private fun drawStickBase(canvas: Canvas, stick: Stick) {
         val kx = stick.cx + stick.x * stick.r * 0.6f
         val ky = stick.cy + stick.y * stick.r * 0.6f
         val active = stick.pointerId >= 0
@@ -873,6 +1027,11 @@ class TouchOverlay(
 
     private fun drawControl(canvas: Canvas, c: Control) {
         val pressed = isPressed(c.keyCode)
+        val skin = skinFor("c" + controls.indexOf(c) + ":" + c.id)
+        if (skin != null) {
+            drawSkin(canvas, c, skin, pressed)
+            return
+        }
         val face = c.round
         if (webLayout) {
             drawKey(canvas, c.rect, c.label, pressed, c.rect.height() * 0.42f)
