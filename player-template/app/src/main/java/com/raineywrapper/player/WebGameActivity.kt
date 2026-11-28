@@ -46,6 +46,21 @@ class WebGameActivity : ComponentActivity() {
     private var web: NoImeWebView? = null
     private var overlay: TouchOverlay? = null
     private var skinKey: String? = null
+    private var audioRel: String? = null
+    private val pickAudio = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        val r = audioRel
+        if (uri != null && r != null) {
+            val ok = AudioPack.import(this, r, uri)
+            Toast.makeText(this, if (ok) "Sonido cambiado. Recargando el juego..." else "No se pudo usar ese archivo (maximo 40 MB)", Toast.LENGTH_LONG).show()
+            if (ok) web?.reload()
+        }
+    }
+    private val pickStartSound = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val ok = AudioPack.importStart(this, uri)
+            Toast.makeText(this, if (ok) "Sonido de inicio guardado. Suena al abrir el juego" else "No se pudo usar ese archivo (maximo 40 MB)", Toast.LENGTH_LONG).show()
+        }
+    }
     private val pickSkin = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         val k = skinKey
         if (uri != null && k != null) overlay?.applySkin(k, uri)
@@ -77,6 +92,65 @@ class WebGameActivity : ComponentActivity() {
     private fun langMenuLabel(): String {
         if (!gameLangDone) return "analizando..."
         return gameLang?.label ?: "no detectado"
+    }
+
+    private fun showAudioPack() {
+        val opts = arrayOf(
+            "Cambiar un sonido del juego",
+            "Quitar los " + AudioPack.count(this) + " sonidos cambiados",
+            "Sonido de inicio: elegir un archivo",
+            "Sonido de inicio: quitar",
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Paquete de audio")
+            .setItems(opts) { _, w ->
+                when (w) {
+                    0 -> listGameAudio()
+                    1 -> { AudioPack.clearAll(this); web?.reload() }
+                    2 -> pickStartSound.launch(arrayOf("audio/*"))
+                    else -> AudioPack.clearStart(this)
+                }
+            }
+            .setNegativeButton("Cerrar", null)
+            .show()
+    }
+
+    /** Busca los sonidos del juego (musica, efectos) y deja elegir cual cambiar. */
+    private fun listGameAudio() {
+        val base = root ?: return
+        Toast.makeText(this, "Buscando los sonidos del juego...", Toast.LENGTH_SHORT).show()
+        Thread {
+            val exts = setOf("ogg", "m4a", "mp3", "wav", "rpgmvo", "rpgmvm", "opus", "wma", "flac")
+            val found = ArrayList<String>()
+            try {
+                base.walkTopDown().maxDepth(7).forEach { f ->
+                    if (f.isFile && f.extension.lowercase() in exts && found.size < 700) found.add(f.relativeTo(base).path.replace(File.separatorChar, '/'))
+                }
+            } catch (e: Exception) {
+            }
+            found.sort()
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                if (found.isEmpty()) {
+                    Toast.makeText(this, "No encontre sonidos sueltos en este juego", Toast.LENGTH_LONG).show()
+                    return@runOnUiThread
+                }
+                val labels = found.map { it + (if (AudioPack.find(this, it) != null) "  [cambiado]" else "") }.toTypedArray()
+                AlertDialog.Builder(this)
+                    .setTitle("Que sonido cambias? (" + found.size + ")")
+                    .setItems(labels) { _, i ->
+                        val rel = found[i]
+                        if (rel.substringAfterLast('.').lowercase().startsWith("rpgmv")) {
+                            Toast.makeText(this, "Este sonido esta cifrado (RPG Maker): no se puede cambiar", Toast.LENGTH_LONG).show()
+                        } else {
+                            audioRel = rel
+                            pickAudio.launch(arrayOf("audio/*"))
+                        }
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            }
+        }.start()
     }
 
     private fun showLangInfo() {
@@ -121,6 +195,7 @@ class WebGameActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = showMenu()
         })
+        if (savedInstanceState == null) AudioPack.playStart(this)
     }
 
     override fun onResume() {
@@ -724,7 +799,8 @@ window.addEventListener("DOMContentLoaded", function () {
         val rel = Uri.decode(uri.encodedPath ?: "/").trimStart('/')
         if (rel == "__swf.html" && isSwf()) return swfPage()
         if (rel.startsWith("__ruffle/")) return ruffleAsset(rel.removePrefix("__ruffle/"))
-        var file = File(base, rel.ifEmpty { indexName })
+        val repl = if (rel.startsWith("__")) null else AudioPack.find(this, rel)
+        var file = repl ?: File(base, rel.ifEmpty { indexName })
         if (!file.isFile) {
             val alt = when (file.extension.lowercase()) {
                 "m4a" -> "ogg"
@@ -739,7 +815,7 @@ window.addEventListener("DOMContentLoaded", function () {
             }
         }
         val ok = try {
-            file.isFile && file.canonicalPath.startsWith(base.canonicalPath + File.separator)
+            file.isFile && (repl != null || file.canonicalPath.startsWith(base.canonicalPath + File.separator))
         } catch (e: Exception) {
             false
         }
@@ -870,6 +946,7 @@ window.addEventListener("DOMContentLoaded", function () {
             }
         })
         if (!isSwf() && (!gameLangDone || gameLang != null)) items.add("Idioma del juego: " + langMenuLabel() to { showLangInfo() })
+        items.add("Paquete de audio (cambiar sonidos): " + AudioPack.count(this) + " cambiados" to { showAudioPack() })
         items.add("Teclado del celular: " + (if (web?.allowIme == true) "si" else "no") to {
             web?.let { w ->
                 w.allowIme = !w.allowIme

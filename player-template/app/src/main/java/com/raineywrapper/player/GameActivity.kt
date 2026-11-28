@@ -65,6 +65,7 @@ class GameActivity : ComponentActivity() {
         private const val PREF_DOLPHIN_CLOCK = "dolphin_clock_level"
         private const val PREF_PSP_FS = "psp_frameskip_level"
         private const val PREF_PSP_CHEATS = "psp_cheats"
+        private const val PREF_NET_SCAN = "psp_net_scan"
         private const val PREF_N64_OPT = "n64_opt_level"
         private const val PREF_MOVED_PATH = "moved_path"
         private const val PREF_MOVED_FROM = "moved_from"
@@ -122,6 +123,13 @@ class GameActivity : ComponentActivity() {
         val k = skinKey
         if (uri != null && k != null) overlay?.applySkin(k, uri)
     }
+    private val pickStartSound = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val ok = AudioPack.importStart(this, uri)
+            Toast.makeText(this, if (ok) "Sonido de inicio guardado. Suena al abrir el juego" else "No se pudo usar ese archivo (maximo 40 MB)", Toast.LENGTH_LONG).show()
+            menu.refresh()
+        }
+    }
     private val pickSave = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importSave(uri)
     }
@@ -168,6 +176,7 @@ class GameActivity : ComponentActivity() {
         revertFailedAzaharTrial()
         markAzaharTrial()
         menu = GameMenu(this, config.title).apply { setItems(menuItems()) }
+        if (savedInstanceState == null) AudioPack.playStart(this)
     }
 
     /** Writes uncaught Java/Kotlin errors to Download/RaineyWrapper-crash.txt (falls back to the app's own folder). */
@@ -244,6 +253,7 @@ class GameActivity : ComponentActivity() {
             currentRom = rom
             markBackendTrial()
             startEmulator(modFile() ?: rom, sram)
+            if (config.system == "psp") detectPspMultiplayer(rom)
             offerLiteMode { offerMoveGame() }
         }
     }
@@ -539,7 +549,11 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_RESOLUTION, (resolutionLevel() + 1) % count).apply()
             menu.refresh()
         },
-        GameMenu.Item({ "Multiplayer: " + multiplayerLabel() }) {
+        GameMenu.Item({ "Asistente multijugador PSP (detectado: " + pspNetLabel() + ")" }) {
+            closeMenu()
+            pspWizard()
+        }.takeIf { config.system == "psp" },
+        GameMenu.Item({ "Red PSP (modo): " + multiplayerLabel() }) {
             prefs().edit().putInt(PREF_MULTIPLAYER, (multiplayerLevel() + 1) % PpssppMultiplayer.levels().size).apply()
             menu.refresh()
         }.takeIf { config.system == "psp" },
@@ -551,13 +565,14 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_PSP_BACKEND, (pspBackend() + 1) % 3).apply()
             menu.refresh()
         }.takeIf { config.system == "psp" },
-        GameMenu.Item({ "Multiplayer MAC: " + (PpssppMultiplayer.mac ?: "-").chunked(2).joinToString(":") }) {
+        GameMenu.Item({ "Red PSP - MAC propia: " + (PpssppMultiplayer.mac ?: "-").chunked(2).joinToString(":") }) {
             PpssppMultiplayer.mac = newMac()
             Toast.makeText(this, "Nueva MAC. Reinicia el juego", Toast.LENGTH_LONG).show()
             menu.refresh()
         }.takeIf { config.system == "psp" },
-        GameMenu.Item({ "Multiplayer IP: " + (PpssppMultiplayer.customIp ?: "sin definir") }) {
+        GameMenu.Item({ "Red PSP - IP del anfitrion: " + (PpssppMultiplayer.customIp ?: "sin definir") }) {
             closeMenu()
+            ipSavedCb = null
             askServerIp()
         }.takeIf { config.system == "psp" },
         GameMenu.Item({ "DS rendimiento: " + (if (prefs().getBoolean(PREF_DS_PERF, false)) "alto" else "normal") }) {
@@ -683,6 +698,14 @@ class GameActivity : ComponentActivity() {
         GameMenu.Item({ "Import mod (zip)" }, { gameRunning && config.external.isEmpty() }) {
             closeMenu()
             pickModZip.launch(arrayOf("*/*"))
+        },
+        GameMenu.Item({ "Sonido de inicio: " + (if (AudioPack.hasStart(this)) "si (tocar para cambiar)" else "elegir un archivo") }) {
+            closeMenu()
+            pickStartSound.launch(arrayOf("audio/*"))
+        },
+        GameMenu.Item({ "Quitar sonido de inicio" }, { AudioPack.hasStart(this) }) {
+            AudioPack.clearStart(this)
+            menu.refresh()
         },
         GameMenu.Item({ "Import save" }, { gameRunning }) {
             closeMenu()
@@ -1258,6 +1281,59 @@ class GameActivity : ComponentActivity() {
         Toast.makeText(this, "El motor grafico elegido no arranco. Volvi a Auto.", Toast.LENGTH_LONG).show()
     }
 
+    private var ipSavedCb: (() -> Unit)? = null
+
+    private fun pspNetLabel(): String = when (prefs().getString(PREF_NET_SCAN, null)) {
+        PspNet.YES -> "si, tiene multijugador"
+        PspNet.MAYBE -> "posible"
+        PspNet.NO -> "no detectado"
+        PspNet.UNKNOWN -> "no se pudo analizar"
+        else -> "analizando..."
+    }
+
+    /** Analiza el ISO una sola vez (en segundo plano) y avisa si parece tener multijugador. */
+    private fun detectPspMultiplayer(rom: File) {
+        if (prefs().getString(PREF_NET_SCAN, null) != null) return
+        lifecycleScope.launch {
+            val r = withContext(Dispatchers.IO) { PspNet.scan(rom) }
+            prefs().edit().putString(PREF_NET_SCAN, r).apply()
+            menu.refresh()
+            when (r) {
+                PspNet.YES -> Toast.makeText(this@GameActivity, "Este juego tiene multijugador. Menu > Asistente multijugador PSP", Toast.LENGTH_LONG).show()
+                PspNet.MAYBE -> Toast.makeText(this@GameActivity, "Este juego podria tener multijugador. Menu > Asistente multijugador PSP", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun applyNet(level: Int) {
+        prefs().edit().putInt(PREF_MULTIPLAYER, level).commit()
+        restartGame()
+    }
+
+    /** Asistente: deja la red lista como en el PPSSPP (modo, IP, MAC propia) y reinicia el juego. */
+    private fun pspWizard() {
+        val opts = arrayOf(
+            "Servidor publico (todos eligen esto)",
+            "Ser anfitrion en mi red Wi-Fi",
+            "Ser anfitrion con ZeroTier (escribo mi IP)",
+            "Unirme a un anfitrion (escribo su IP)",
+            "Apagar la red",
+        )
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Multijugador PSP")
+            .setItems(opts) { _, w ->
+                when (w) {
+                    0 -> applyNet(2)
+                    1 -> applyNet(3)
+                    2 -> { ipSavedCb = { applyNet(6) }; askServerIp() }
+                    3 -> { ipSavedCb = { applyNet(5) }; askServerIp() }
+                    else -> applyNet(0)
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
     private fun askServerIp() {
         val input = android.widget.EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_PHONE
@@ -1279,6 +1355,12 @@ class GameActivity : ComponentActivity() {
                 PpssppMultiplayer.customIp = text.ifEmpty { null }
                 prefs().edit().putString(PREF_MP_IP, text.ifEmpty { null }).apply()
                 menu.refresh()
+                if (text.isNotEmpty() && ipSavedCb != null) {
+                    val cb = ipSavedCb
+                    ipSavedCb = null
+                    cb?.invoke()
+                    return@setPositiveButton
+                }
                 if (text.isNotEmpty()) {
                     Toast.makeText(this, "Ahora elegi Multiplayer: IP propia y reinicia", Toast.LENGTH_LONG).show()
                 }
