@@ -703,6 +703,9 @@ class GameActivity : ComponentActivity() {
             closeMenu()
             pickStartSound.launch(arrayOf("audio/*"))
         },
+        GameMenu.Item({ "Probar sonido de inicio" }, { AudioPack.hasStart(this) }) {
+            AudioPack.playStart(this) { m -> Toast.makeText(this, "No suena: " + m, Toast.LENGTH_LONG).show() }
+        },
         GameMenu.Item({ "Quitar sonido de inicio" }, { AudioPack.hasStart(this) }) {
             AudioPack.clearStart(this)
             menu.refresh()

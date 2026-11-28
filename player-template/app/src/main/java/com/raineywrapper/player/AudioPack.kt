@@ -16,7 +16,10 @@ object AudioPack {
     private const val MAX_BYTES = 40L shl 20
 
     private fun dir(ctx: Context) = File(ctx.filesDir, "audiopack").also { it.mkdirs() }
-    private fun startFile(ctx: Context) = File(ctx.filesDir, "startup_sound.bin")
+    // Se guarda con la extension original (.mp3, .ogg...) para que el reproductor reconozca el formato.
+    private fun startFile(ctx: Context): File =
+        ctx.filesDir.listFiles()?.firstOrNull { it.isFile && it.name.startsWith("startup_sound.") && !it.name.endsWith(".tmp") }
+            ?: File(ctx.filesDir, "startup_sound.bin")
 
     private fun key(rel: String): String =
         rel.substringBeforeLast('.').lowercase().replace(Regex("[^a-z0-9_-]"), "_")
@@ -48,24 +51,44 @@ object AudioPack {
 
     fun hasStart(ctx: Context) = startFile(ctx).isFile
 
-    fun importStart(ctx: Context, uri: Uri): Boolean = copy(ctx, uri, startFile(ctx))
+    fun importStart(ctx: Context, uri: Uri): Boolean {
+        val ext = displayName(ctx, uri).substringAfterLast('.', "mp3").lowercase().replace(Regex("[^a-z0-9]"), "").ifEmpty { "mp3" }
+        ctx.filesDir.listFiles()?.filter { it.name.startsWith("startup_sound.") }?.forEach { it.delete() }
+        return copy(ctx, uri, File(ctx.filesDir, "startup_sound." + ext))
+    }
 
     fun clearStart(ctx: Context) {
         startFile(ctx).delete()
     }
 
-    fun playStart(ctx: Context) {
+    /** Reproduce el sonido de inicio. onError recibe el motivo si no se pudo (para mostrarlo en pantalla). */
+    fun playStart(ctx: Context, onError: ((String) -> Unit)? = null) {
         val f = startFile(ctx)
-        if (!f.isFile) return
+        if (!f.isFile) {
+            onError?.invoke("primero elegi un archivo")
+            return
+        }
         try {
             MediaPlayer().apply {
+                setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                )
                 setDataSource(f.absolutePath)
+                setVolume(1f, 1f)
                 setOnPreparedListener { it.start() }
                 setOnCompletionListener { it.release() }
-                setOnErrorListener { mp, _, _ -> mp.release(); true }
+                setOnErrorListener { mp, what, extra ->
+                    mp.release()
+                    onError?.invoke("formato no soportado (error " + what + "/" + extra + "). Proba con MP3 u OGG")
+                    true
+                }
                 prepareAsync()
             }
         } catch (e: Throwable) {
+            onError?.invoke(e.message ?: "error desconocido")
         }
     }
 

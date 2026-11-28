@@ -99,6 +99,7 @@ class WebGameActivity : ComponentActivity() {
             "Cambiar un sonido del juego",
             "Quitar los " + AudioPack.count(this) + " sonidos cambiados",
             "Sonido de inicio: elegir un archivo",
+            "Sonido de inicio: probar ahora",
             "Sonido de inicio: quitar",
         )
         AlertDialog.Builder(this)
@@ -108,6 +109,7 @@ class WebGameActivity : ComponentActivity() {
                     0 -> listGameAudio()
                     1 -> { AudioPack.clearAll(this); web?.reload() }
                     2 -> pickStartSound.launch(arrayOf("audio/*"))
+                    3 -> AudioPack.playStart(this) { m -> Toast.makeText(this, "No suena: " + m, Toast.LENGTH_LONG).show() }
                     else -> AudioPack.clearStart(this)
                 }
             }
