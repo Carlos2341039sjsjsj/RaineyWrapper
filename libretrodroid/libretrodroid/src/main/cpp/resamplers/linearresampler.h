@@ -18,6 +18,7 @@
 #ifndef LIBRETRODROID_LINEARRESAMPLER_H
 #define LIBRETRODROID_LINEARRESAMPLER_H
 
+#include <cstdint>
 #include "resampler.h"
 
 namespace libretrodroid {
@@ -25,7 +26,15 @@ namespace libretrodroid {
 class LinearResampler : public Resampler {
 public:
     void resample(const int16_t *source, int32_t inputFrames, int16_t *sink, int32_t sinkFrames) override;
-    LinearResampler() = default;
+    LinearResampler();
+
+private:
+    // Interpolacion cubica (Catmull-Rom): mucho menos distorsion que la lineal al pasar de 32/44.1 kHz a 48 kHz.
+    bool cubic = true;
+    int16_t prevL = 0;
+    int16_t prevR = 0;
+
+public:
     virtual ~LinearResampler() = default;
 };
 

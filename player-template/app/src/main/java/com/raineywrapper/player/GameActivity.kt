@@ -66,6 +66,9 @@ class GameActivity : ComponentActivity() {
         private const val PREF_PSP_FS = "psp_frameskip_level"
         private const val PREF_PSP_CHEATS = "psp_cheats"
         private const val PREF_NET_SCAN = "psp_net_scan"
+        private const val PREF_AUDIO_API = "audio_api"
+        private const val PREF_AUDIO_SOFT = "audio_soft"
+        private const val PREF_AUDIO_BUF = "audio_buf"
         private const val PREF_N64_OPT = "n64_opt_level"
         private const val PREF_MOVED_PATH = "moved_path"
         private const val PREF_MOVED_FROM = "moved_from"
@@ -259,6 +262,13 @@ class GameActivity : ComponentActivity() {
     }
 
     private fun startEmulator(rom: File, sram: ByteArray?) {
+        // Ajustes de audio del motor nativo (los lee el audio de LibretroDroid al iniciar).
+        try {
+            android.system.Os.setenv("RAINEY_AUDIO_API", if (audioApi() == 1) "opensl" else "aaudio", true)
+            android.system.Os.setenv("RAINEY_AUDIO_SOFT", if (audioSoftOn()) "1" else "0", true)
+            android.system.Os.setenv("RAINEY_AUDIO_BUF", (audioBuf() + 1).toString(), true)
+        } catch (_: Throwable) {
+        }
         val data = GLRetroViewData(this).apply {
             coreFilePath = config.core
             gameFilePath = rom.absolutePath
@@ -736,6 +746,18 @@ class GameActivity : ComponentActivity() {
             prefs().edit().putInt(PREF_AUDIO_MODE, (audioMode() + 1) % 3).commit()
             restartGame()
         },
+        GameMenu.Item({ "Motor de audio: " + (if (audioApi() == 1) "OpenSL ES" else "AAudio (normal)") }) {
+            prefs().edit().putInt(PREF_AUDIO_API, 1 - audioApi()).commit()
+            restartGame()
+        },
+        GameMenu.Item({ "Audio suave (juegos pesados): " + listOf("auto", "si", "no")[audioSoftMode()] }) {
+            prefs().edit().putInt(PREF_AUDIO_SOFT, (audioSoftMode() + 1) % 3).commit()
+            restartGame()
+        },
+        GameMenu.Item({ "Buffer de audio: " + listOf("normal", "grande", "enorme")[audioBuf()] }) {
+            prefs().edit().putInt(PREF_AUDIO_BUF, (audioBuf() + 1) % 3).commit()
+            restartGame()
+        },
         GameMenu.Item({ "Quit" }) { finishAndRemoveTask() },
     )
 
@@ -823,6 +845,15 @@ class GameActivity : ComponentActivity() {
     }
 
     private fun audioMode() = prefs().getInt(PREF_AUDIO_MODE, 0).coerceIn(0, 2)
+
+    private fun audioApi() = prefs().getInt(PREF_AUDIO_API, 0).coerceIn(0, 1)
+    private fun audioSoftMode() = prefs().getInt(PREF_AUDIO_SOFT, 0).coerceIn(0, 2)
+    private fun audioSoftOn(): Boolean = when (audioSoftMode()) {
+        1 -> true
+        2 -> false
+        else -> isHeavySystem()
+    }
+    private fun audioBuf() = prefs().getInt(PREF_AUDIO_BUF, 0).coerceIn(0, 2)
 
     /** Sistemas que en un celular de gama media/baja suelen ir por debajo de la velocidad real. */
     private fun isHeavySystem() = config.system in listOf("psp", "3ds", "nds", "wii", "gamecube", "gc", "n64", "ps2", "dreamcast")

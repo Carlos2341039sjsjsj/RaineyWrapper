@@ -18,7 +18,9 @@
 #include "log.h"
 
 #include "audio.h"
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <memory>
 
 namespace libretrodroid {
@@ -28,6 +30,17 @@ Audio::Audio(int32_t sampleRate, double refreshRate, bool preferLowLatencyAudio)
 
     contentRefreshRate = refreshRate;
     inputSampleRate = sampleRate;
+
+    // "Audio suave": el audio puede seguir la velocidad real del emulador (hasta ~25%) en lugar de quedarse sin datos.
+    const char *soft = getenv("RAINEY_AUDIO_SOFT");
+    if (soft != nullptr && soft[0] == '1') {
+        kpEff = 0.05;
+        kiEff = 0.0006;
+        maxpEff = 0.2;
+        maxiEff = 0.6;
+        LOGI("Audio suave activado");
+    }
+
     audioLatencySettings = findBestLatencySettings(preferLowLatencyAudio);
     initializeStream();
 }
@@ -44,6 +57,12 @@ bool Audio::initializeStream() {
     builder.setDataCallback(this);
     builder.setErrorCallback(this);
 
+    const char *api = getenv("RAINEY_AUDIO_API");
+    if (api != nullptr && api[0] == 'o') {
+        LOGI("Forzando OpenSL ES");
+        builder.setAudioApi(oboe::AudioApi::OpenSLES);
+    }
+
     if (audioLatencySettings->useLowLatencyStream) {
         builder.setPerformanceMode(oboe::PerformanceMode::LowLatency);
     } else {
@@ -55,6 +74,7 @@ bool Audio::initializeStream() {
         baseConversionFactor = (double) inputSampleRate / stream->getSampleRate();
         fifoBuffer = std::make_unique<oboe::FifoBuffer>(2, audioBufferSize);
         temporaryAudioBuffer = std::unique_ptr<int16_t[]>(new int16_t[audioBufferSize]);
+        temporaryBufferSize = audioBufferSize;
         latencyTuner = std::make_unique<oboe::LatencyTuner>(*stream);
         return true;
     } else {
@@ -66,11 +86,20 @@ bool Audio::initializeStream() {
 }
 
 std::unique_ptr<Audio::AudioLatencySettings> Audio::findBestLatencySettings(bool preferLowLatencyAudio) {
+    std::unique_ptr<AudioLatencySettings> settings;
     if (oboe::AudioStreamBuilder::isAAudioRecommended() && preferLowLatencyAudio) {
-        return std::make_unique<AudioLatencySettings>(LOW_LATENCY_SETTINGS);
+        settings = std::make_unique<AudioLatencySettings>(LOW_LATENCY_SETTINGS);
     } else {
-        return std::make_unique<AudioLatencySettings>(DEFAULT_LATENCY_SETTINGS);
+        settings = std::make_unique<AudioLatencySettings>(DEFAULT_LATENCY_SETTINGS);
     }
+
+    // Buffer mas grande (x2, x3, x4): mas retraso pero aguanta mejor los juegos con tirones.
+    const char *buf = getenv("RAINEY_AUDIO_BUF");
+    int mult = buf != nullptr ? atoi(buf) : 1;
+    if (mult >= 2 && mult <= 4) {
+        settings->bufferSizeInVideoFrames *= mult;
+    }
+    return settings;
 }
 
 int32_t Audio::computeAudioBufferSize() {
@@ -114,8 +143,24 @@ oboe::DataCallbackResult Audio::onAudioReady(oboe::AudioStream *oboeStream, void
     framesToSubmit += numFrames * finalConversionFactor;
     int32_t currentFramesToSubmit = std::round(framesToSubmit);
     framesToSubmit -= currentFramesToSubmit;
+    currentFramesToSubmit = std::clamp(currentFramesToSubmit, 0, temporaryBufferSize / 2);
 
-    fifoBuffer->readNow(temporaryAudioBuffer.get(), currentFramesToSubmit * 2);
+    // Si el emulador no entrego suficiente audio (juego pesado), lo que falta se rellena con un fundido a
+    // silencio. Antes quedaba sonido viejo en el buffer temporal y se oia como zumbido o robot.
+    int32_t wanted = currentFramesToSubmit * 2;
+    int32_t got = fifoBuffer->readNow(temporaryAudioBuffer.get(), wanted);
+    got = std::clamp(got, 0, wanted) & ~1;
+    if (got < wanted) {
+        int16_t *tmp = temporaryAudioBuffer.get();
+        double l = got >= 2 ? tmp[got - 2] : 0.0;
+        double r = got >= 2 ? tmp[got - 1] : 0.0;
+        for (int32_t i = got; i + 1 < wanted; i += 2) {
+            l *= 0.97;
+            r *= 0.97;
+            tmp[i] = static_cast<int16_t>(l);
+            tmp[i + 1] = static_cast<int16_t>(r);
+        }
+    }
 
     auto outputArray = reinterpret_cast<int16_t *>(audioData);
     resampler.resample(temporaryAudioBuffer.get(), currentFramesToSubmit, outputArray, numFrames);
@@ -135,20 +180,21 @@ double Audio::computeDynamicBufferConversionFactor(double dt) {
     double errorMeasure = (framesCapacityInBuffer - 2.0f * framesAvailableInBuffer) / framesCapacityInBuffer;
 
     errorIntegral += errorMeasure * dt;
+    errorIntegral = std::clamp(errorIntegral, -maxiEff / kiEff, maxiEff / kiEff);
 
     // Wikipedia states that human ear resolution is around 3.6 Hz within the octave of 1000–2000 Hz.
     // This changes continuously, so we should try to keep it a very low value.
-    double proportionalAdjustment = std::clamp(kp * errorMeasure, -maxp, maxp);
+    double proportionalAdjustment = std::clamp(kpEff * errorMeasure, -maxpEff, maxpEff);
 
     // Ki is a lot lower, so it's safe if it exceeds the ear threshold. Hopefully convergence will
     // be slow enough to be not perceptible. We need to battle test this value.
-    double integralAdjustment = std::clamp(ki * errorIntegral, -maxi, maxi);
+    double integralAdjustment = std::clamp(kiEff * errorIntegral, -maxiEff, maxiEff);
 
     double finalAdjustment = proportionalAdjustment + integralAdjustment;
 
     LOGD("Audio speed adjustments (p: %f) (i: %f)", proportionalAdjustment, integralAdjustment);
 
-    return 1.0 - (finalAdjustment);
+    return std::max(0.2, 1.0 - (finalAdjustment));
 }
 
 int32_t Audio::roundToEven(int32_t x) {

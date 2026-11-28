@@ -88,6 +88,13 @@ private:
 
     double playbackSpeed = 1.0;
 
+    // RaineyWrapper: ajustes elegidos desde el menu (variables de entorno RAINEY_AUDIO_*)
+    double kpEff = 0.006;
+    double kiEff = 0.00002;
+    double maxpEff = 0.003;
+    double maxiEff = 0.02;
+    int32_t temporaryBufferSize = 0;
+
     std::unique_ptr<AudioLatencySettings> audioLatencySettings;
 };
 
